@@ -1,0 +1,20 @@
+{
+    "name": "excho0/haven-core",
+    "description": "Core supplier and admin utilities for WooCommerce.",
+    "type": "wordpress-plugin",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "HavenCore\\": "include/"
+        },
+        "classmap": [
+            "include/"
+        ]
+    },
+    "authors": [
+        {
+            "name": "excho0",
+            "email": "[redacted]"
+        }
+    ]
+}

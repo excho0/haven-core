@@ -1,0 +1,850 @@
+/* 
+// ===========================================================================
+//📌 Global Wordpress Overrides
+// ===========================================================================
+*/
+
+body {
+    background: none;
+}
+
+
+/* 
+// END
+// ===========================================================================
+*/
+
+
+
+/* 
+// ===========================================================================
+//📌 Global Styles used Across different pages
+// ===========================================================================
+*/
+
+
+.app-content-styled {
+    border-top: 1px solid var(--p-surface-100);
+    overflow: auto;
+    padding: 2rem;
+    background-color: var(--p-surface-100);
+    border-top-left-radius: 30px;
+    box-shadow: inset 0 3px 4px #0000001a !important; /* important otherwise the shadow is late */
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    .app-content-styled {
+        border-top: 1px solid var(--p-surface-700);  /* Lighter border for dark mode */
+        background-color: var(--p-surface-900); /* Darker background for dark mode */
+        box-shadow: inset 0 3px 4px rgba(255, 255, 255, 0.1) !important; /* Lighter inset shadow for dark mode */
+    }
+}
+
+/* Flip corner radius in RTL mode */
+[dir="rtl"] .app-content-styled {
+    border-top-left-radius: 0;
+    border-top-right-radius: 30px;
+}
+
+/* Small screens: apply full border radius */
+@media (max-width: 640px) {
+    .app-content-styled {
+        border-top-right-radius: 30px;
+        border-top-left-radius: 30px;
+    }
+
+    [dir="rtl"] .app-content-styled {
+        border-top-right-radius: 30px;
+        border-top-left-radius: 30px;
+    }
+}
+
+
+#havencore-app-wrapper {
+    opacity: 0;
+    transform: translateY(40px) scale(0.98);
+    transition: transform 600ms cubic-bezier(0.22, 1, 0.36, 1), opacity 500ms ease;
+}
+
+#havencore-app-wrapper.ready {
+    display: block;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.backdrop-overlay {
+    backdrop-filter: blur(4px);
+    background-color: rgba(255, 255, 255, 0.233); /* light mode: soft white */
+}
+
+    /* Override for dark mode */
+@media (prefers-color-scheme: dark) {
+    .backdrop-overlay {
+        background-color: rgba(0, 0, 0, 0.4); /* dark mode: soft black */
+    }
+}
+
+/* Custom CSS to remove outline and box-shadow on focus and active */
+
+/* a:active, 
+a:focus, 
+button:focus,
+button:active {
+    outline: none !important;
+    box-shadow: none !important;
+} */
+
+
+
+/* Collapsed Sidebar - Narrow with Icons Only */
+/* Apply a smooth transition to the sidebar's width */
+aside {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    transition: width 0.3s ease;  /* Smooth transition when expanding/collapsing */
+
+}
+
+/* Collapsed Sidebar - Narrow with Icons Only */
+/* Apply a smooth transition to the sidebar's width */
+aside {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    transition: width 0.3s ease;  /* Smooth transition when expanding/collapsing */
+
+}
+
+
+/* Make sure the sidebar items take available space */
+aside ul {
+    flex-grow: 1;  /* This ensures the list items take up all available space */
+    white-space: nowrap;
+}
+
+/* Base link/button styles */
+.aside-link,
+.aside-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  width: 100%;
+  border-radius: 0.375rem;
+  transition: all 0.3s ease-in-out;
+  text-decoration: none;
+  color: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Sidebar item hover/active (light mode) */
+.aside-link:hover,
+.aside-button:hover {
+  background-color: #dbeafe; /* blue-100 */
+  color: #2563eb; /* blue-600 */
+}
+
+.aside-link:active,
+.aside-button:active {
+  background-color: #bfdbfe; /* blue-200 */
+  color: #1d4ed8; /* blue-700 */
+}
+
+.aside-link-active {
+  background-color: #bfdbfe; /* blue-200 */
+  color: #1d4ed8; /* blue-700 */
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  .aside-link:hover,
+  .aside-button:hover {
+    background-color: #1e3a8a; /* dark blue-900 */
+    color: #dbeafe; /* light blue */
+  }
+
+  .aside-link:active,
+  .aside-button:active {
+    background-color: #1e40af; /* dark blue-800 */
+    color: #ffffff;
+  }
+
+  .aside-link-active {
+    background-color: #1e40af; /* dark blue-800 */
+    color: #ffffff;
+  }
+}
+
+
+/* Sidebar when collapsed */
+aside.collapsed {
+    width: 72.5px !important;  /* Set a narrow width when collapsed */
+}
+
+
+/* 
+// END
+// ===========================================================================
+*/
+
+
+/* 
+// ===========================================================================
+//📌 Supplier Portal Page Styles
+// ===========================================================================
+*/
+
+/* Default light mode styles */
+.bg-automatic {
+    --tw-bg-opacity: 1;
+    background-color: rgba(243, 244, 246, var(--tw-bg-opacity)); /* Light mode background */
+}
+
+.order-loader {
+    --tw-bg-opacity: 1;
+    background-color: rgba(255, 255, 255, var(--tw-bg-opacity));
+}
+
+.change-password-form-card {
+    border: 1px solid ;
+    border-color: var(--p-overlay-popover-border-color) !important;
+}
+
+
+.tracking-group {
+    border: 1px solid var(--p-panel-border-color);
+}
+
+.group-products {
+    padding: 5px;
+    border-radius: 0.75rem;
+    min-height: 130px;
+    transition:
+        box-shadow 0.3s ease,
+        border-color 0.3s ease,
+        opacity 0.3s ease,
+        transform 0.3s ease;
+    opacity: 0.95;
+    transform: scale(0.98);
+    box-sizing: border-box; /* Prevent layout shifts */
+}
+
+.product-card {
+    border: 1px solid var(--p-panel-border-color);
+    padding: 1.5rem;
+    border-radius: 0.75rem;
+    box-sizing: border-box; /* Prevent layout shifts */
+    gap: 1.5rem;
+}
+
+.dragging-active {
+    border: 3px solid #3b82f6;
+    box-shadow: 0 0 15px 5px rgba(59, 130, 246, 0.5);
+    opacity: 1;
+    transform: scale(1);
+}
+
+.dragging-over {
+    border: 2px solid #3b82f6; /* Blue border */
+    background: linear-gradient(to bottom right, #eff6ff, #bfdbfe); /* Gradient from blue-50 to blue-100 */
+    box-shadow: 0 0 10px 5px rgba(59, 130, 246, 0.5); /* Soft blue shadow */
+    backdrop-filter: blur(8px); /* Optional blur effect */
+    box-shadow: 0 0 8px 2px #93c5fd; /* Light blue ring effect */
+}
+
+.is-dragging {
+    border: none; /* Remove border when dragging */
+}
+
+.default-border {
+    border: 2px dashed #d1d5db; /* Dashed border */
+    transition: border 0.3s, background 0.3s;
+}
+
+.default-border:hover {
+    border-color: #3b82f6; /* Blue border on hover */
+    background-color: rgba(59, 130, 246, 0.1); /* Slight blue background on hover */
+}
+
+/* Support for dark mode */
+@media (prefers-color-scheme: dark) {
+    /* Dark Mode: Automatically change background color */
+    .bg-automatic {
+        --tw-bg-opacity: 1;
+        background-color: rgba(0, 0, 0, var(--tw-bg-opacity)); /* Dark background for dark mode */
+    }
+
+    /* Dark Mode: Order Skeleton Loader */
+    .order-loader {
+        border-color:rgb(79, 80, 80);
+        --tw-bg-opacity: 1;
+        background-color: rgba(var(--surface-rgb, 33, 33, 33), 0.6); /* Darker background for dark mode */
+
+    }
+
+    /* Dark mode styles for dragging-active */
+    .dragging-active {
+        border: 3px solid #3b82f6; /* Retain the same blue border */
+        box-shadow: 0 0 15px 5px rgba(59, 130, 246, 0.5); /* Soft blue shadow */
+        opacity: 1; /* Full opacity */
+        transform: scale(1); /* Normal scaling */
+    }
+
+    /* Dark mode styles for dragging-over */
+    .dragging-over {
+        border: 2px solid #3b82f6; /* Blue border */
+        background: linear-gradient(to bottom right, #1e293b, #334155); /* Dark mode gradient */
+        box-shadow: 0 0 10px 5px rgba(59, 130, 246, 0.5); /* Soft blue shadow */
+        backdrop-filter: blur(8px); /* Optional blur effect */
+        box-shadow: 0 0 8px 2px #93c5fd; /* Light blue ring effect */
+    }
+
+    /* Dark mode styles for default-border */
+    .default-border {
+        border: 2px dashed #4b5563; /* Darker dashed border */
+        transition: border 0.3s, background 0.3s;
+    }
+
+    .default-border:hover {
+        border-color: #3b82f6; /* Blue border on hover */
+        background-color: rgba(59, 130, 246, 0.1); /* Slight blue background on hover */
+    }
+}
+
+
+/* Target the .p-panel-header only inside the hc-supplier-portal-app */
+.hc-supplier-portal-app .p-panel-header {
+    position: sticky;
+    top: -16;
+    z-index: 30;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+
+    border-radius: var(--p-border-radius-md); /* Rounded top-left */
+
+    /* Optional: soft shadow for elevation */
+    /* box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04); */
+
+    background-color: rgba(var(--surface-rgb, 255, 255, 255), 0.6); 
+    /* You can also use: background-color: var(--surface-a); */
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    .hc-supplier-portal-app .p-panel-header {
+        background-color: rgba(var(--p-panel-background), 0.6); /* Darker background for dark mode */
+        backdrop-filter: blur(6px); /* Keep the blur effect */
+        -webkit-backdrop-filter: blur(6px); /* For Safari */
+    }
+}
+
+.hc-supplier-portal-app .p-password {
+    display: unset !important; /* Fixes a bug with the toggleMask button */
+}
+
+/* 
+// END
+// ===========================================================================
+*/
+
+
+
+/* 
+// ===========================================================================
+//📌 Manage Suppliers Page Styles
+// ===========================================================================
+*/
+
+.scrollbar-stable {
+    scrollbar-gutter: stable !important;
+}
+/* Light & default scrollbar */
+.scrollbar-modern {
+    scrollbar-width: thin;              /* Firefox */
+    scrollbar-color: #94a3b8 transparent; /* thumb, track */
+}
+
+/* Dark mode override using media query */
+@media (prefers-color-scheme: dark) {
+    .scrollbar-modern {
+        scrollbar-color: #475569 transparent; /* Slate-600 */
+    }
+}
+
+/* Chrome, Edge, Safari */
+.scrollbar-modern::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.scrollbar-modern::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.scrollbar-modern::-webkit-scrollbar-thumb {
+    background-color: #94a3b8;  /* Slate-400 */
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+
+.scrollbar-modern::-webkit-scrollbar-thumb:hover {
+    background-color: #64748b; /* Slate-500 */
+}
+
+/* Dark mode support using media query (Chrome/Safari) */
+@media (prefers-color-scheme: dark) {
+    .scrollbar-modern::-webkit-scrollbar-thumb {
+        background-color: #475569; /* Slate-600 */
+    }
+    .scrollbar-modern::-webkit-scrollbar-thumb:hover {
+        background-color: #334155; /* Slate-700 */
+    }
+}
+
+/* Hidden scrollbar */
+.scrollbar-hidden {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+}
+
+
+.optimize-scroll {
+  will-change: transform, scroll-position;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+
+
+/* 
+// END
+// ===========================================================================
+*/
+
+/* 
+// ===========================================================================
+//📌 Main Plugin Page Styles
+// ===========================================================================
+*/
+
+.setting-option_boolean {
+    border: 1px solid var(--p-panel-border-color);
+    padding: .75rem;
+    border-radius: .375rem;
+}
+
+/* 
+// END
+// ===========================================================================
+*/
+
+
+/* 
+// ===========================================================================
+//📌 PrimeVue Styles
+// ===========================================================================
+*/
+
+/* 
+//📌 Overrides
+// ===========================================================================
+*/
+
+
+.p-panel {
+    box-shadow: 0 3px 4px #0000001a, 0 24px 36px #0000000a;
+}
+
+.p-menubar {
+    overflow-x: hidden;
+}
+
+
+input.p-inputtext,
+textarea.p-inputtextarea,
+div.p-dropdown {
+    border: 1px solid !important;
+    border-color: var(--p-inputtext-border-color) !important;
+    border-radius: var(--p-inputtext-border-radius) !important;
+    background: var(--p-inputtext-background);
+    color: var(--p-inputtext-color);
+    box-shadow: var(--p-inputtext-shadow) !important;
+}
+
+/* Styles for invalid elements with the .p-invalid class */
+.p-inputtext.p-invalid,
+textarea.p-inputtextarea.p-invalid,
+div.p-dropdown.p-invalid {
+    border-color: var(--p-inputtext-invalid-border-color) !important;
+}
+
+/* Let PrimeVue handle interactions */
+input.p-inputtext:focus,
+textarea.p-inputtextarea:focus,
+div.p-dropdown.p-focus {
+    border-color: var(--p-focus-ring-color) !important;
+    box-shadow: var(--p-focus-ring-shadow) !important;
+    outline: none !important;
+    z-index: 1; /* bring to front if needed */
+}
+
+
+/* Let PrimeVue handle interactions */
+/* Hover state, but NOT when focused */
+input.p-inputtext:hover:not(:focus),
+textarea.p-inputtextarea:hover:not(:focus),
+div.p-dropdown.p-hover:not(.p-focus) {
+    border-color: var(--p-inputtext-hover-border-color, var(--p-inputtext-border-color)) !important;
+    box-shadow: var(--p-inputtext-hover-shadow, var(--p-inputtext-shadow)) !important;
+}
+
+/* Ensures the entire ToggleSwitch input remains clickable and functional,
+even if global styles (like from WP admin) interfere with checkboxes/radios */
+.p-toggleswitch-input {
+    cursor: pointer !important;                     /* Ensures pointer cursor on hover */
+    appearance: none !important;                    /* Removes default browser styling */
+    position: absolute !important;                  /* Allows full overlay over the toggle area */
+    top: 0 !important;
+    inset-inline-start: 0 !important;               /* Respects RTL/LTR layout */
+    width: 100% !important;                         /* Makes the input span the full toggle area */
+    height: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    opacity: 0 !important;                          /* Keeps it invisible while preserving click events */
+    z-index: 1 !important;                          /* Ensures it's on top for interaction */
+    outline: 0 none !important;                     /* Removes focus outline (handled elsewhere) */
+    border-radius: var(--p-toggleswitch-border-radius) !important;  /* Matches toggle shape */
+}
+
+.p-card {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    border-color: var(--p-panel-border-color);
+}
+
+.changed-field {
+    background-color: #fffacc !important;
+    color: #222 !important;
+    transition: all 0.3s !important;
+}
+
+.p-select-label:has(.changed-field) span{
+    color: #222 !important;
+}
+
+/* 
+//📌 Animations
+// ===========================================================================
+*/
+
+.fade-label-enter-active,
+.fade-label-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.fade-label-enter-from,
+.fade-label-leave-to {
+  opacity: 0;
+    }
+
+.fade-label-enter-to,
+.fade-label-leave-from {
+  opacity: 1;
+}
+
+
+.fade-overlay-enter-active,
+.fade-overlay-leave-active {
+  transition: opacity 300ms ease-in-out;
+}
+
+.fade-overlay-enter-from,
+.fade-overlay-leave-to {
+  opacity: 0;
+}
+
+.fade-overlay-enter-to,
+.fade-overlay-leave-from {
+  opacity: 1;
+}
+
+/* 
+// 📌 Supplier Portal Page
+// ===========================================================================\
+*/
+
+/* Shared transition */
+.__hc_sp_portal_slide-ltr-enter-active,
+.__hc_sp_portal_slide-ltr-leave-active,
+.__hc_sp_portal_slide-rtl-enter-active,
+.__hc_sp_portal_slide-rtl-leave-active,
+.__hc_sp_portal_slide-ltr-move,
+.__hc_sp_portal_slide-rtl-move {
+    transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* MOVE smoother */
+.__hc_sp_portal_slide-ltr-move,
+.__hc_sp_portal_slide-rtl-move {
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    will-change: transform;
+    backface-visibility: hidden;
+    transform-style: preserve-3d;
+}
+
+/* ENTER - from slightly below + fade + slight scale */
+.__hc_sp_portal_slide-ltr-enter-from,
+.__hc_sp_portal_slide-rtl-enter-from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+}
+
+.__hc_sp_portal_slide-ltr-enter-to,
+.__hc_sp_portal_slide-rtl-enter-to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+/* LEAVE - to side + fade */
+.__hc_sp_portal_slide-ltr-leave-from {
+    opacity: 1;
+    transform: translateX(0);
+}
+.__hc_sp_portal_slide-ltr-leave-to {
+    opacity: 0;
+    transform: translateX(30px);
+}
+
+.__hc_sp_portal_slide-rtl-leave-from {
+    opacity: 1;
+    transform: translateX(0);
+}
+.__hc_sp_portal_slide-rtl-leave-to {
+    opacity: 0;
+    transform: translateX(-30px);
+}
+
+.quick-fade-enter-active,
+.quick-fade-leave-active {
+  transition: opacity 200ms ease-in-out; /* slower and smoother */
+  width: 100%;
+}
+
+.quick-fade-enter-from,
+.quick-fade-leave-to {
+  opacity: 0;
+}
+
+.quick-fade-enter-to,
+.quick-fade-leave-from {
+  opacity: 1;
+}
+
+/* slide-scale */
+.slide-scale-enter-active,
+.slide-scale-leave-active {
+  transition: transform .3s ease, opacity .3s ease;
+}
+
+.slide-scale-enter-from {
+  opacity: 0;
+  transform: translateY(20px) scale(0.8);
+}
+.slide-scale-enter-to {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.slide-scale-leave-from {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.slide-scale-leave-to {
+  opacity: 0;
+  transform: translateY(20px) scale(0.8);
+}
+
+
+/* 
+// END
+// ===========================================================================
+/* 
+
+/* 
+// 📌 Main Plugin Page
+// ===========================================================================
+*/
+
+/* Slide Transition for the mobile sidebar */
+.slide-enter-active, .slide-leave-active {
+    transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out; /* Apply both transform and opacity transitions */
+}
+
+.slide-enter, .slide-leave-to {
+    transform: translateX(-100%); /* Offscreen for LTR */
+    opacity: 0;
+}
+
+.slide-enter-to, .slide-leave {
+    transform: translateX(0); /* Onscreen */
+    opacity: 1;
+}
+
+/* Slide transition for RTL */
+[dir="rtl"] .slide-enter, 
+[dir="rtl"] .slide-leave-to {
+    transform: translateX(100%); /* Offscreen for RTL */
+}
+
+[dir="rtl"] .slide-enter-to, 
+[dir="rtl"] .slide-leave {
+    transform: translateX(0); /* Onscreen */
+}
+
+/* Card Swap is used for the plugin admin panels smooth router-view swapping */
+.card-swap-enter-active,
+.card-swap-leave-active {
+    transition: transform 600ms cubic-bezier(0.25, 0.8, 0.25, 1), opacity 400ms ease;
+    position: absolute;
+    width: 100%;
+    top: 0;
+    left: 0;
+    will-change: transform, opacity;
+    z-index: 1;
+}
+
+/* NEW CARD slides UP */
+.card-swap-enter-from {
+    transform: translateY(40px) scale(0.98);
+    opacity: 0;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08); /* soft shadow lift */
+}
+
+.card-swap-enter-to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+    box-shadow: none;
+}
+
+/* OLD CARD fades (and lifts slightly) */
+.card-swap-leave-from {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+}
+.card-swap-leave-to {
+    transform: translateY(-20px) scale(0.96);  /* lift and fade out */
+    opacity: 0;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.fade-enter-to,
+.fade-leave-from {
+  opacity: 1;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 300ms ease;
+}
+
+/* 
+// END
+// ===========================================================================
+/* 
+
+/* 
+// 📌 Manage Suppliers Page
+// ===========================================================================
+*/
+
+/* Shared transition behavior */
+.__hc_sp_mgr_slide-ltr-enter-active,
+.__hc_sp_mgr_slide-ltr-leave-active,
+.__hc_sp_mgr_slide-rtl-enter-active,
+.__hc_sp_mgr_slide-rtl-leave-active,
+.__hc_sp_mgr_slide-ltr-move,
+.__hc_sp_mgr_slide-rtl-move {
+    transition: all 0.4s ease;
+}
+
+/* Smoother reordering animations */
+.__hc_sp_mgr_slide-ltr-move,
+.__hc_sp_mgr_slide-rtl-move {
+    transition: all 0.4s ease;
+    will-change: transform;
+    backface-visibility: hidden;
+    transform-style: preserve-3d;
+}
+
+/* ENTER from TOP */
+.__hc_sp_mgr_slide-ltr-enter-from,
+.__hc_sp_mgr_slide-rtl-enter-from {
+    opacity: 0;
+    transform: translateY(-20px);
+}
+
+.__hc_sp_mgr_slide-ltr-enter-to,
+.__hc_sp_mgr_slide-rtl-enter-to {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* LTR Leave: to RIGHT */
+.__hc_sp_mgr_slide-ltr-leave-from {
+    opacity: 1;
+    transform: translateX(0);
+}
+.__hc_sp_mgr_slide-ltr-leave-to {
+    opacity: 0;
+    transform: translateX(40px);
+}
+
+/* RTL Leave: to LEFT */
+.__hc_sp_mgr_slide-rtl-leave-from {
+    opacity: 1;
+    transform: translateX(0);
+}
+.__hc_sp_mgr_slide-rtl-leave-to {
+    opacity: 0;
+    transform: translateX(-40px);
+}
+
+/* Crucial: removed items should not affect layout */
+.__hc_sp_mgr_slide-ltr-leave-active,
+.__hc_sp_mgr_slide-rtl-leave-active {
+    position: absolute;
+}
+
+
+.fade-scale-enter-active,
+.fade-scale-leave-active {
+    transition: all 0.3s ease;
+}
+.fade-scale-enter-from,
+.fade-scale-leave-to {
+    opacity: 0;
+    transform: scale(0.95);
+}
+.fade-scale-enter-to,
+.fade-scale-leave-from {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* 
+// END
+// ===========================================================================

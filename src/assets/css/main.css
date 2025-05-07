@@ -1,0 +1,158 @@
+.block-image.elementor-widget-image a {
+	display:block;
+}
+
+/* Modal background */
+.modal {
+    visibility: hidden;  /* Initially hidden */
+    opacity: 0;          /* Start with opacity 0 */
+    position: fixed;
+    z-index: 1000; /* Ensure it's above other content */
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.6); /* Darker semi-transparent background */
+    transition: opacity 0.5s ease, visibility 0s 0.5s; /* Smooth fade transition */
+}
+
+/* Modal is visible with enhanced fade and zoom animation */
+.modal.show {
+    visibility: visible; /* Make it visible */
+    opacity: 1;           /* Fade-in the modal */
+    transition: opacity 0.5s ease, visibility 0s 0s; /* Instant visibility after fade-in */
+}
+
+/* Modal content */
+.modal-content {
+    background-color: #ffffff;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0); /* Start completely scaled down */
+    padding: 30px;
+    border-radius: 15px;
+    text-align: center;
+    border: none;
+    max-width: 80%;
+    width: 500px; /* Adjust width to be more stylish */
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); /* Larger shadow for depth */
+    animation: scaleUp 0.5s ease-out forwards; /* Animation to scale up */
+}
+
+/* Custom button styling for modal */
+/* Custom button styling for modal */
+.modal-btn {
+    font: inherit;
+    background-color: rgb(1, 143, 60); /* Green background */
+    border: 0;
+    color: rgb(255, 255, 255);
+    border-radius: 0.5em;
+    font-size: 1.15rem;
+    padding: 0.375em 1em;
+    font-weight: 550;
+    text-shadow: 0 0.0625em 0 #016906d6;
+    box-shadow: 
+        inset 0 0.125em 0 0 rgba(0, 161, 67, 0.2), /* lighter greenish inner shadow */
+        0 0.125em 0 0 rgba(0, 128, 51, 0.25), /* softer, greenish outer shadow */
+        0 0.25em 0 0 rgba(0, 95, 38, 0.3), /* greenish, not too dark */
+        0 0.3125em 0 0 rgba(0, 85, 34, 0.35), /* gentle green for more depth */
+        0 0.375em 0 0 rgba(0, 75, 28, 0.4); /* even lighter greenish shadow */
+    transition: 0.15s ease;
+    cursor: pointer;
+
+    /* Added min-width and min-height */
+    min-width: 120px !important;
+    min-height: 20px !important;
+}
+
+/* Button hover effect */
+.modal-btn:active {
+    translate: 0 0.225em;
+    box-shadow: 
+        inset 0 0.05em 0 0 rgba(1, 143, 60, 0.35), /* lighter greenish inner shadow */
+        0 0.05em 0 0 rgba(0, 128, 51, 0.35), /* softer, greenish outer shadow */
+        0 0.125em 0 0 rgba(0, 95, 38, 0.45), /* lighter and fresher active shadow */
+        0 0.25em 0 0 rgba(0, 80, 31, 0.55); /* greenish, active shadow */
+}
+
+/* Button hover effect */
+.modal-btn.disabled {
+    background-color: rgb(228, 228, 228);  /* Lighter gray background for disabled */
+    color: rgb(211, 211, 211);  /* Lighter gray text for a disabled look */
+
+    /* Adjusted box-shadow to match the background and text colors */
+    box-shadow: inset 0 0.05em 0 0 rgba(200, 200, 200, 0.5), 
+        0 0.1em 0 0 rgba(180, 180, 180, 0.5);  /* Softer shadow to simulate the pressed state */
+
+    cursor: not-allowed;  /* Disable the cursor to reflect it's unclickable */
+}
+
+
+/* Secondary button styling for modal */
+.modal-btn-sec {
+    font: inherit;
+    background-color: #f0f0f0;
+    border: 0;
+    color: #242424;
+	border-radius: 0.5em;
+	font-size: 1.15rem;
+	padding: 0.375em 1em;
+	font-weight: 550;
+    text-shadow: 0 0.0625em 0 #fff;
+    box-shadow: inset 0 0.0625em 0 0 #f4f4f4, 0 0.0625em 0 0 #efefef,
+        0 0.125em 0 0 #ececec, 0 0.25em 0 0 #e0e0e0, 0 0.3125em 0 0 #dedede,
+        0 0.375em 0 0 #dcdcdc, 0 0.425em 0 0 #cacaca, 0 0.425em 0.5em 0 #cecece;
+    transition: 0.15s ease;
+    cursor: pointer;
+
+	/* Added min-width and min-height */
+	min-width: 120px;
+	min-height: 20px;
+}
+
+/* Button hover effect */
+.modal-btn-sec:active {
+    translate: 0 0.225em;
+    box-shadow: inset 0 0.03em 0 0 #f4f4f4, 0 0.03em 0 0 #efefef,
+        0 0.0625em 0 0 #ececec, 0 0.125em 0 0 #e0e0e0, 0 0.125em 0 0 #dedede,
+        0 0.2em 0 0 #dcdcdc, 0 0.225em 0 0 #cacaca, 0 0.225em 0.375em 0 #cecece;
+}
+
+/* Button hover effect */
+.modal-btn-sec.disabled {
+	background-color: rgb(228, 228, 228);  /* Lighter gray background for disabled */
+	color: rgb(211, 211, 211);  /* Lighter gray text for a disabled look */
+
+	/* Adjusted box-shadow to match the background and text colors */
+	box-shadow: inset 0 0.05em 0 0 rgba(200, 200, 200, 0.5), 
+		0 0.1em 0 0 rgba(180, 180, 180, 0.5);  /* Softer shadow to simulate the pressed state */
+
+	cursor: not-allowed;  /* Disable the cursor to reflect it's unclickable */
+}
+
+
+/* Keyframe animation for scaling modal */
+@keyframes scaleUp {
+    0% {
+        transform: translate(-50%, -50%) scale(0); /* Start completely scaled down */
+        opacity: 0;
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(1); /* End at normal size */
+        opacity: 1;
+    }
+}
+
+/* Keyframe animation for fading out modal */
+@keyframes fadeOut {
+    0% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1); /* End at normal size */
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.8); /* Fade and scale down */
+    }
+}

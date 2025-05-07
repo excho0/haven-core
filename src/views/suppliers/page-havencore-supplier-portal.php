@@ -1,0 +1,3175 @@
+<?php
+    // Check if user is logged in and has the 'supplier' role
+    if (!is_user_logged_in() || !wc_current_user_has_role('supplier')) {
+        wp_redirect(wp_login_url($_SERVER['REQUEST_URI']));
+        exit;
+    }
+
+    use HavenCore\Utils\ScriptHelpers;
+
+    ScriptHelpers::loadApiFetch(); // ✅ Injects wp-api-fetch and nonce safely
+
+    ScriptHelpers::loadVue([
+        'withDraggable'    => true,
+    ]);
+
+    // Get the current user and their locale
+    $current_user = wp_get_current_user();
+    $user_locale = get_user_locale($current_user); // Get the WordPress locale for the user
+    $user_attributes = get_user_meta($current_user->ID, 'attributes', true);
+
+    // If the user has a locale, switch to it
+    if ($user_locale) {
+        switch_to_locale($user_locale);
+    }
+    
+    // Get the 'lang' and 'dir' attributes dynamically based on the locale
+    ob_start();
+    language_attributes();  // This function prints the 'lang' and 'dir' attributes
+    $locale_attributes = ob_get_clean();  // Capture the output
+
+    // Handle POST from the "Continue Anyway" form
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_continue'])) {
+        // Set short-lived cookie
+        setcookie('allow_mobile_dashboard', '1', time() + 60, "/");
+        // Redirect to the same page to re-enter normal flow
+        wp_redirect($_SERVER['REQUEST_URI']);
+        exit;
+    }
+
+    // Show warning only on mobile AND if cookie is not set
+    if (wp_is_mobile() && !isset($_COOKIE['allow_mobile_dashboard'])) {
+        ?>
+        <!DOCTYPE html>
+        <html lang="en" style="overflow: hidden;">
+        <head>
+            <meta charset="<?php bloginfo('charset'); ?>">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>⚠️ Not Built for Mobile</title>
+            <style>
+                html, body {
+                    margin: 0;
+                    padding: 0;
+                    overflow: hidden;
+                    height: 100%;
+                    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    background: #f9fafb;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: #1f2937;
+                    -webkit-tap-highlight-color: transparent;
+                    user-select: none;
+                }
+                .warning {
+                    background: white;
+                    padding: 2.25rem 2rem;
+                    border-radius: 1.25rem;
+                    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);
+                    text-align: center;
+                    max-width: 95%;
+                    width: 420px;
+                    animation: fadeIn 0.4s ease-out both;
+                }
+                .warning h1 {
+                    font-size: 1.75rem;
+                    color: #dc2626;
+                    margin-bottom: 1.2rem;
+                }
+                .warning p {
+                    font-size: 1rem;
+                    color: #374151;
+                    line-height: 1.6;
+                    margin-bottom: 2rem;
+                }
+                .warning button {
+                    background: linear-gradient(135deg, #4f46e5, #3b82f6);
+                    color: white;
+                    padding: 1rem 1.75rem;
+                    border-radius: 9999px;
+                    border: none;
+                    font-weight: 600;
+                    font-size: 1rem;
+                    cursor: pointer;
+                    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                }
+                .warning button:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 18px rgba(59, 130, 246, 0.5);
+                }
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(20px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="warning">
+                <h1>⚠️ Not Built for Mobile</h1>
+                <p>
+                    This dashboard is optimized for desktop and laptop devices.<br><br>
+                    Mobile phones — even mid-range ones — may experience lag, glitches, or crashes.<br><br>
+                    We strongly recommend using a computer or tablet.<br><br>
+                    If you still want to continue, you may proceed below.
+                </p>
+                <form method="POST">
+                    <button type="submit" name="confirm_continue">I Understand, Continue →</button>
+                </form>
+            </div>
+        </body>
+        </html>
+        <?php
+        exit;
+    }
+?>
+
+<html <?= $locale_attributes; ?> style="overflow: hidden; overscroll-behavior: none;">
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+        <style>
+
+            .fade-in-scale {
+                animation: fadeInScale 0.35s ease-out;
+            }
+
+            @keyframes fadeInScale {
+                from {
+                    opacity: 0;
+                    transform: scale(0.95);
+                }
+                to {
+                    opacity: 1;
+                    transform: scale(1);
+                }
+            }
+
+            .fade-slide-badge-enter-active,
+            .fade-slide-badge-leave-active {
+                transition: all 0.3s ease;
+            }
+            .fade-slide-badge-enter-from {
+                opacity: 0;
+                transform: translateY(-5px);
+            }
+            .fade-slide-badge-leave-to {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            .p-datatable-column-header-content {
+                justify-content: center;
+            }
+            
+            .p-datatable-tbody > tr > td {
+                text-align: center !important;
+            }
+        </style>
+    </head>
+    <body>
+        <?= havencore_render_loader([
+            'count' => 6,
+            'id' => 'app-loading',
+            'on_ready' => 'initSupplierPortalApp'
+        ]); ?>
+
+
+
+        <div id="havencore-app" class="hc-supplier-portal-app">
+            <havencore-app></havencore-app>
+        </div>
+
+        <script type="application/json" id="app-initial-data">
+            <?= json_encode([
+                'i18n' => [
+
+                    // ─── General UI ───────────────────────────────
+                    'actions'                        => __('Actions', HAVEN_CORE_TEXT_DOMAIN),
+                    'apply'                          => __('Apply', HAVEN_CORE_TEXT_DOMAIN),
+                    'back_to_home'                   => __('Back to Home', HAVEN_CORE_TEXT_DOMAIN),
+                    'cancel'                         => __('Cancel', HAVEN_CORE_TEXT_DOMAIN),
+                    'collapse'                       => __('Collapse', HAVEN_CORE_TEXT_DOMAIN),
+                    'expand'                         => __('Expand', HAVEN_CORE_TEXT_DOMAIN),
+                    'home'                           => __('Home', HAVEN_CORE_TEXT_DOMAIN),
+                    'logout'                         => __('Log Out', HAVEN_CORE_TEXT_DOMAIN),
+                    'n_a'                            => __('N/A', HAVEN_CORE_TEXT_DOMAIN),
+                    'refresh'                        => __('Refresh', HAVEN_CORE_TEXT_DOMAIN),
+                    'save'                           => __('Save', HAVEN_CORE_TEXT_DOMAIN),
+                    'search'                         => __('Search', HAVEN_CORE_TEXT_DOMAIN),
+                    'title'                          => __('Supplier Portal', HAVEN_CORE_TEXT_DOMAIN),
+
+                    // ─── Authentication / Password ───────────────
+                    'change_password'               => __('Change Password', HAVEN_CORE_TEXT_DOMAIN),
+                    'confirm_password'              => __('Confirm Password', HAVEN_CORE_TEXT_DOMAIN),
+                    'confirm_password_error'        => __('Passwords do not match', HAVEN_CORE_TEXT_DOMAIN),
+                    'enter_new_password'            => __('Enter a new password', HAVEN_CORE_TEXT_DOMAIN),
+                    'lowercase_requirement'         => __('At least one lowercase letter', HAVEN_CORE_TEXT_DOMAIN),
+                    'min_length_requirement'        => __('Minimum 8 characters', HAVEN_CORE_TEXT_DOMAIN),
+                    'new_password'                  => __('New Password', HAVEN_CORE_TEXT_DOMAIN),
+                    'numeric_requirement'           => __('At least one numeric character', HAVEN_CORE_TEXT_DOMAIN),
+                    'pick_a_password'               => __('Pick a password', HAVEN_CORE_TEXT_DOMAIN),
+                    'uppercase_requirement'         => __('At least one uppercase letter', HAVEN_CORE_TEXT_DOMAIN),
+
+                    // ─── Customer & Contact Info ─────────────────
+                    'company'                       => __('Company', HAVEN_CORE_TEXT_DOMAIN),
+                    'customer_info'                 => __('Customer Info', HAVEN_CORE_TEXT_DOMAIN),
+                    'email'                         => __('Email', HAVEN_CORE_TEXT_DOMAIN),
+                    'name'                          => __('Name', HAVEN_CORE_TEXT_DOMAIN),
+                    'phone'                         => __('Phone', HAVEN_CORE_TEXT_DOMAIN),
+                    'shipping_address'              => __('Shipping Address', HAVEN_CORE_TEXT_DOMAIN),
+
+                    // ─── Fulfillment / Tracking ──────────────────
+                    'add_tracking_number'           => __('Add Tracking Number', HAVEN_CORE_TEXT_DOMAIN),
+                    'already_fulfilled'             => __('Already Fulfilled', HAVEN_CORE_TEXT_DOMAIN),
+                    'already_fulfilled_text'        => __('Order is already marked as fulfilled.', HAVEN_CORE_TEXT_DOMAIN),
+                    'confirm_fulfillment'           => __('Confirm Fulfillment', HAVEN_CORE_TEXT_DOMAIN),
+                    'confirm_fulfillment_text'      => __('Are you sure you want to confirm fulfillment for:', HAVEN_CORE_TEXT_DOMAIN),
+                    'confirm_submit'                => __('Submit', HAVEN_CORE_TEXT_DOMAIN),
+                    'currently_in_tracking'         => __('Currently in Tracking #', HAVEN_CORE_TEXT_DOMAIN),
+                    'fulfillment_info_text'         => __('All tracking info has been saved already. This will notify the customer and lock the tracking fields.', HAVEN_CORE_TEXT_DOMAIN),
+                    'mark_as_fulfilled'             => __('Mark as Fulfilled', HAVEN_CORE_TEXT_DOMAIN),
+                    'missing_tracking_number'       => __('Please enter a valid tracking number.', HAVEN_CORE_TEXT_DOMAIN),
+                    'missing_tracking_number_detail'=> __('Please enter a valid tracking number.', HAVEN_CORE_TEXT_DOMAIN),
+                    'missing_tracking_number_title' => __('Missing Tracking Number', HAVEN_CORE_TEXT_DOMAIN),
+                    'tracking_exists'               => __('This tracking number already exists.', HAVEN_CORE_TEXT_DOMAIN),
+                    'tracking_exists_detail'        => __('This tracking number already exists.', HAVEN_CORE_TEXT_DOMAIN),
+                    'tracking_exists_title'         => __('Tracking Exists', HAVEN_CORE_TEXT_DOMAIN),
+                    'tracking_number'               => __('Tracking Number', HAVEN_CORE_TEXT_DOMAIN),
+
+                    // ─── Orders ──────────────────────────────────
+                    'all'                           => __('All', HAVEN_CORE_TEXT_DOMAIN),
+                    'error_loading_orders'          => __('Error Loading Orders', HAVEN_CORE_TEXT_DOMAIN),
+                    'fetching_orders_error'         => __('Error Loading Orders', HAVEN_CORE_TEXT_DOMAIN),
+                    'fetching_orders_loading'       => __('Fetching more orders...', HAVEN_CORE_TEXT_DOMAIN),
+                    'fetching_orders_success'       => __('Orders loaded successfully!', HAVEN_CORE_TEXT_DOMAIN),
+                    'filter_status'                 => __('Filter Status', HAVEN_CORE_TEXT_DOMAIN),
+                    'fulfilled'                     => __('Fulfilled', HAVEN_CORE_TEXT_DOMAIN),
+                    'no_changes_detail'             => __('No changes have been made!', HAVEN_CORE_TEXT_DOMAIN),
+                    'no_orders_message_subtitle'    => __('Try adjusting your filters or check back later—new orders might pop up soon!', HAVEN_CORE_TEXT_DOMAIN),
+                    'no_orders_message_title'       => __('No orders found.', HAVEN_CORE_TEXT_DOMAIN),
+                    'order_number'                  => __('Order #', HAVEN_CORE_TEXT_DOMAIN),
+                    'order_saved'                   => __('Order Saved Successfully', HAVEN_CORE_TEXT_DOMAIN),
+                    'orders'                        => __('Orders', HAVEN_CORE_TEXT_DOMAIN),
+                    'partially_fulfilled'           => __('Partially Fulfilled', HAVEN_CORE_TEXT_DOMAIN),
+                    'pending'                       => __('Pending', HAVEN_CORE_TEXT_DOMAIN),
+                    'ready_to_fulfill'              => __('Ready to Fulfill', HAVEN_CORE_TEXT_DOMAIN),
+
+                    // ─── Products & Grouping ─────────────────────
+                    'move'                          => __('Move', HAVEN_CORE_TEXT_DOMAIN),
+                    'move_products_to_tracking_group' => __('Move Products to Tracking Group', HAVEN_CORE_TEXT_DOMAIN),
+                    'note'                          => __('Note', HAVEN_CORE_TEXT_DOMAIN),
+                    'products'                      => __('Products', HAVEN_CORE_TEXT_DOMAIN),
+                    'quantity'                      => __('Quantity', HAVEN_CORE_TEXT_DOMAIN),
+                    'stock'                         => __('Stock', HAVEN_CORE_TEXT_DOMAIN),
+                    'status'                        => __('Status', HAVEN_CORE_TEXT_DOMAIN),
+                    'managed'                       => __('Managed', HAVEN_CORE_TEXT_DOMAIN),
+                    'unmanaged'                     => __('Unmanaged', HAVEN_CORE_TEXT_DOMAIN),
+                    'edit'                          => __('Edit', HAVEN_CORE_TEXT_DOMAIN),
+                    'variations'                    => __('Variations', HAVEN_CORE_TEXT_DOMAIN),
+                    'edit_variations'               => __('Edit Variations', HAVEN_CORE_TEXT_DOMAIN),
+                    'attributes'                    => __('Attributes', HAVEN_CORE_TEXT_DOMAIN),
+                    'product_image_alt'             => __('product image', HAVEN_CORE_TEXT_DOMAIN),
+                    'search_placeholder'            => __('Search...', HAVEN_CORE_TEXT_DOMAIN),
+                    'id'                            => __('ID', HAVEN_CORE_TEXT_DOMAIN),
+                    'instock'                       => __('In stock', HAVEN_CORE_TEXT_DOMAIN),
+                    'outofstock'                    => __('Out of stock', HAVEN_CORE_TEXT_DOMAIN),
+                    'onbackorder'                   => __('On backorder', HAVEN_CORE_TEXT_DOMAIN),
+                    'remove_group_tooltip'          => __('Remove group and unassign products', HAVEN_CORE_TEXT_DOMAIN),
+                    'select_products_to_move'       => __('Select products to move into', HAVEN_CORE_TEXT_DOMAIN),
+                    'sku'                           => __('SKU', HAVEN_CORE_TEXT_DOMAIN),
+                    'tap_here_to_move_products'     => __('Tap here to move products', HAVEN_CORE_TEXT_DOMAIN),
+                    'tap_or_drag_products_here'     => __('Tap here or Drag products to add them', HAVEN_CORE_TEXT_DOMAIN),
+                    'ungrouped_products'            => __('Ungrouped Products', HAVEN_CORE_TEXT_DOMAIN),
+
+                    // ─── Notes ───────────────────────────────────
+                    'add_note'                      => __('Add Note', HAVEN_CORE_TEXT_DOMAIN),
+                    'delete_note'                   => __('Delete Note', HAVEN_CORE_TEXT_DOMAIN),
+                    'edit_note'                     => __('Edit Note', HAVEN_CORE_TEXT_DOMAIN),
+
+                    // ─── Toasts / Feedback ───────────────────────
+                    'error'                         => __('Error', HAVEN_CORE_TEXT_DOMAIN),
+                    'request_failed'                => __('The request failed. Please check your connection.', HAVEN_CORE_TEXT_DOMAIN),
+                    'success'                       => __('Success', HAVEN_CORE_TEXT_DOMAIN),
+
+                    'new_order_notification_title' => __('📦 New Order Received!', HAVEN_CORE_TEXT_DOMAIN),
+                    'new_order_notification_body'  => __('You\'ve just been assigned Order #%order_id%. Tap to review the details.', HAVEN_CORE_TEXT_DOMAIN),
+
+                ]
+            ]) ?>
+        </script>
+
+        <script>
+            const currentUser = <?= json_encode([
+                'ID' => $current_user->ID,
+                'user_login' => $current_user->user_login,
+                'user_email' => $current_user->user_email,
+                'display_name' => $current_user->display_name,
+                'roles' => $current_user->roles,
+                'avatar' => get_avatar_url($current_user->ID),
+                'attributes' => $user_attributes,
+                'logout_url' => html_entity_decode(wp_logout_url(home_url()))
+            ]); ?>;
+
+            // console.log('currentUser inital Data:', currentUser);
+            
+            const initialData = JSON.parse(document.getElementById('app-initial-data')?.textContent || '{}');
+
+            function waitForWP(timeout = 5000, interval = 100) {
+                return new Promise((resolve, reject) => {
+                    const maxTries = Math.ceil(timeout / interval);
+                    let tries = 0;
+
+                    const check = () => {
+                        if (typeof wp !== 'undefined' && (wp.apiFetch || wp.apiRequest)) {
+                            resolve(wp);
+                        } else if (++tries >= maxTries) {
+                            reject(new Error('🛑 wp.apiFetch not available within timeout.'));
+                        } else {
+                            setTimeout(check, interval);
+                        }
+                    };
+
+                    check();
+                });
+            }
+            
+            // console.log('initialData:', initialData);
+            // console.log(Sortable)
+
+            function debounce(func, wait) {
+                let timeout;
+                return function (...args) {
+                    clearTimeout(timeout);
+                    timeout = setTimeout(() => func.apply(this, args), wait);
+                };
+            }
+
+            function notifyOSWithVibrate({
+                title = '',
+                body = '',
+                icon = '/icon.png',
+                silent = false,
+                vibrate = true
+            } = {}) {
+                if (!('Notification' in window)) {
+                    console.warn('[notifyOS] Notifications are not supported in this browser.');
+                    return;
+                }
+
+                const notify = () => {
+                    const options = {
+                        body,
+                        icon,
+                        silent,
+                    };
+
+                    if (vibrate && 'vibrate' in navigator) {
+                        options.vibrate = [200, 100, 200]; // pattern: vibrate, pause, vibrate
+                    }
+
+                    new Notification(title, options);
+                };
+
+                if (Notification.permission === 'granted') {
+                    notify();
+                } else if (Notification.permission !== 'denied') {
+                    Notification.requestPermission().then(permission => {
+                        if (permission === 'granted') {
+                            notify();
+                        }
+                    });
+                }
+            }
+
+            // console.log(VueSonner)
+
+            const app = Vue.createApp({
+                data() {
+                    // Initialize sidebarItems dynamically based on i18n
+                    const sidebarItems = [
+                        {
+                            name: initialData.i18n.orders,  // General label
+                            icon: 'pi pi-shopping-bag',           // Icon for Home
+                            route: '/orders'                    // Route for Home section
+                        },
+                        {
+                            name: initialData.i18n.products,        // General label
+                            icon: 'pi pi-shop',                     // Icon for Products
+                            route: '/products'                    // Route for Products section
+                        }
+                    ];
+
+
+                    // Log sidebarItems initialization to check if it's set correctly
+                    // console.log('sidebarItems initialized:', sidebarItems);
+
+                    // Access the Pinia store
+                    const globalStore = useGlobalStore();
+
+                    // Use a computed property to ensure reactivity
+                    const mobile = Vue.computed(() => globalStore.isMobile);
+
+                    const Rtl = Vue.computed(() => globalStore.isRtl);
+                    
+                    return {
+                        i18n: initialData.i18n,
+                        currentUser: currentUser,
+                        mobileIcon: "<?= esc_url(get_site_icon_url()); ?>",
+                        sidebarItems: sidebarItems || [], // Sidebar items for navigation
+                        mobile: mobile,
+                        isRtl: Rtl,
+                    };
+                },
+                provide() {
+                    return {
+                        i18n: this.i18n,
+                        currentUser: this.currentUser,
+                        mobileIcon: this.mobileIcon,
+                    };
+                },
+            });
+
+            app.use(PrimeVue.Config, {
+                theme: {
+                    preset: PrimeVue.Themes.Aura,
+                    options: {
+                        darkModeSelector: true,
+                    }
+                }
+            });
+
+            // 🔌 Plugins
+            app.use(VueSonner) // registers everything
+
+
+            // 🧭 Directives
+            app.directive('tooltip', PrimeVue.Tooltip);
+
+            // 🧾 Form Inputs
+            app.component('Password', PrimeVue.Password);
+            app.component('InputText', PrimeVue.InputText);
+            app.component('Textarea', PrimeVue.Textarea);
+            app.component('FloatLabel', PrimeVue.FloatLabel);
+            app.component('IconField', PrimeVue.IconField);
+            app.component('InputIcon', PrimeVue.InputIcon);
+            app.component('ToggleSwitch', PrimeVue.ToggleSwitch);
+            app.component('Checkbox', PrimeVue.Checkbox);
+
+
+            // 🕹️ UI Controls
+            app.component('Button', PrimeVue.Button);
+            app.component('Menu', PrimeVue.Menu);
+
+            // 🧱 Layout & Containers
+            app.component('Menubar', PrimeVue.Menubar);
+            app.component('Panel', PrimeVue.Panel);
+            app.component('Card', PrimeVue.Card);
+            app.component('Dialog', PrimeVue.Dialog);
+            app.component('ScrollPanel', PrimeVue.ScrollPanel);
+            app.component('VirtualScroller', PrimeVue.VirtualScroller);
+
+            app.component('Select', PrimeVue.Select);
+            app.component('Divider', PrimeVue.Divider);
+
+            // 🗂️ Data & Tables
+            app.component('DataTable', PrimeVue.DataTable);
+            app.component('Column', PrimeVue.Column);
+            app.component('Toolbar', PrimeVue.Toolbar);
+            app.component('FileUpload', PrimeVue.FileUpload);
+            app.component('Tag', PrimeVue.Tag);
+
+
+
+            // 🎨 Visual Feedback
+            app.component('Skeleton', PrimeVue.Skeleton);
+            app.component('Image', PrimeVue.Image);
+            app.component('ProgressSpinner', PrimeVue.ProgressSpinner);
+
+            // 🧲 External Components
+            app.component('draggable', vuedraggable);
+
+
+
+            const Orders = {
+                inject: ['i18n', 'mobileIcon'],
+                data() {
+
+                    // Access the Pinia store
+                    const globalStore = useGlobalStore();
+
+                    // Use a computed property to ensure reactivity
+                    const mobile = Vue.computed(() => globalStore.isMobile);
+
+                    const Rtl = Vue.computed(() => globalStore.isRtl);
+                    
+                    return {
+                        mobile: mobile,
+                        isRtl: Rtl,
+
+                        orders: [], // initially empty, will fetch from AJAX
+                        ordersLoaded: false,
+                        ordersPollingJob: null,
+
+                        // Pagination + filtering logic
+                        currentPage: 1,
+                        perPage: 15,
+                        totalPages: 1,
+                        sort: 'desc',           // Default sort order: newest first
+                        isLoadingMore: false,
+                        allOrdersLoaded: false,
+                        lastSavedTimestamps: {}, // 🆕 Track last save time per order ID
+
+
+                        selectedStatus: { label: 'All', value: 'all', icon: 'pi pi-bars' },
+
+
+                        statusOptions: [
+                            { label: 'All', value: 'all', icon: 'pi pi-list' },
+                            { label: 'Pending', value: 'pending', icon: 'pi pi-clock' },
+                            { label: 'Partial', value: 'partially-fulfilled', icon: 'pi pi-exclamation-triangle' },
+                            { label: 'Ready', value: 'ready-to-fulfill', icon: 'pi pi-send' },
+                            { label: 'Fulfilled', value: 'fulfilled', icon: 'pi pi-check-circle' }
+                        ],
+
+                        searchDialog: {
+                            visible: false,
+                            SearchQuery: '',    // temp while typing
+                        },
+                        
+                        searchQuery: '',
+                        ordersSearchTimer: null,
+
+
+                        fulfillmentDialog: {
+                            visible: false,
+                            order: null,
+                        },
+
+                        newTrackingDialog: {
+                            visible: false,
+                            order: null,
+                            tracking_number: ''
+                        },
+
+                        moveProductsDialog: {
+                            visible: false,
+                            order: null,
+                            group: null
+                        },
+
+                        selectedProductsToMove: [],
+
+                        noteDialog: {
+                            visible: false,
+                            order: null,
+                            product: null,
+                            note: ''
+                        },
+
+                        orderMenus: {},
+
+                        debouncedSaves: {}, // maps order IDs to debounced save functions
+                    
+                        confirmfulfillmentSubmitted: false,
+                        panelCollapsedState: {},
+                        // ID of group currently being dragged over, or null if none
+                        dragOverGroupId: null,
+                        // (optional) general dragging flag if you want
+                        isDragging: false,
+
+                        menuItems: [],
+
+                    };
+                },
+                template: `
+                    <div class="p-4">
+
+                        <transition 
+                            name="quick-fade" 
+                            mode="out-in"
+                        >
+                            <!-- ⏳ Loading State -->
+                            <div v-if="!ordersLoaded" class="space-y-6">
+                                <div v-for="i in 8" :key="i" class="order-loader border rounded-xl shadow-sm p-4">
+                                    <!-- Header Skeleton (title + buttons) -->
+                                    <div class="flex justify-between items-center">
+                                        <Skeleton height="1.5rem" width="30%" />
+                                        <div class="flex gap-2">
+                                            <Skeleton shape="circle" size="2rem" />
+                                            <Skeleton shape="circle" size="2rem" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+
+                            <main v-else>
+                                <nav class="px-5">
+                                    <Menubar :model="menuItems">
+
+                                        <template #start>
+                                            <div class="flex items-center gap-4">
+                                                <span class="font-semibold text-lg">{{ i18n.orders }}</span>
+                                                <FloatLabel class="w-48" variant="on">
+                                                    <Select 
+                                                        v-model="selectedStatus"
+                                                        :options="statusOptions"
+                                                        id="statusFilter"
+                                                        @change="filterOrders"
+                                                        class="w-full"
+                                                    >
+
+                                                        <template #value="{ value }">
+                                                            <span class="flex items-center gap-2 w-full px-1">
+                                                            <i :class="value?.icon || 'pi pi-filter'"></i>
+                                                            <span>{{ value?.label || 'Filter Status' }}</span>
+                                                            </span>
+                                                        </template>
+
+
+                                                        <template #option="{ option }">
+                                                            <span class="flex items-center gap-2">
+                                                                <i :class="option.icon"></i>
+                                                                <span>{{ option.label }}</span>
+                                                            </span>
+                                                        </template>
+
+                                                    </Select>
+
+                                                    <label for="statusFilter">{{ i18n.filter_status }}</label>
+                                                </FloatLabel>
+                                            </div>
+                                        </template>
+
+                                        <template #end>
+                                            <!-- If on mobile, show the button -->
+                                            <template v-if="mobile">
+                                                <Button 
+                                                    icon="pi pi-search" 
+                                                    @click="openSearchDialog"
+                                                    severity="secondary"
+                                                    variant="text"
+                                                    raised
+                                                />
+                                            </template>
+
+                                            <!-- Otherwise, show the inline search input -->
+                                            <template v-else>
+                                                <FloatLabel variant="on">
+                                                    <IconField>
+                                                        <InputIcon class="pi pi-search" />
+                                                        <InputText 
+                                                            v-model="searchQuery" 
+                                                            id="search" 
+                                                            class="w-full" 
+                                                            @input="debouncedFetchOrders"
+                                                        />
+                                                    </IconField>
+                                                    <label for="search">{{ i18n.search }}</label>
+                                                </FloatLabel>
+                                            </template>
+                                        </template>
+
+                                    </Menubar>
+
+                                </nav>
+                                
+                                <transition 
+                                    name="slide-scale" 
+                                    mode="out-in"
+                                >
+
+                                    <div 
+                                        v-if="filteredOrders.length === 0" 
+                                        :key="'no-orders-message'"
+                                        class="text-center py-10  space-y-2"
+                                    >
+                                        <i class="pi pi-folder-open" :style="{ fontSize: '2.5rem' }"></i>
+
+                                            <div class="text-2xl font-semibold">
+                                                {{ i18n.no_orders_message_title || 'No orders found yet.' }}
+                                            </div>
+                                            <div class="text-lg">
+                                                {{ i18n.no_orders_message_subtitle || 'Why not grab a coffee and check back later?' }}
+                                            </div>
+                                    </div>
+
+                                    <VirtualScroller
+                                        v-else
+                                        ref="ordersScrollPanel"
+                                        :items="filteredOrders"
+                                        :itemSize="360"
+                                        :numToleratedItems="16"
+                                        :autoSize="true"
+                                        :showSpacer="false"
+                                        :resizeDelay="0"
+                                        :style="{ height: '80svh' }"
+                                        :lazy="false"
+                                        :trackBy="'id'"
+                                        :pt="{
+                                            content: {
+                                                class: 'flex flex-col gap-y-6 p-6',
+                                            }
+                                        }"
+
+                                        :class="[
+                                            'flex-1 p-4 mt-2',
+                                            'scrollbar-hidden optimize-scroll'
+
+                                        ]"
+                                    >
+                                        <template v-slot:item="{ item: order, index, options }">
+
+                                            <transition
+                                                :name="isRtl ? '__hc_sp_portal_slide-rtl' : '__hc_sp_portal_slide-ltr'"
+                                                tag="div"
+                                            >
+
+                                            <Panel
+                                                :key="order.id || ('order-' + index)"
+                                                :header="i18n.orders + ' #' + order.id"
+                                                toggleable
+                                                v-model:collapsed="panelCollapsedState[order.id]"
+                                            >
+
+                                                <template #header>
+                                                    <div class="flex justify-between items-center w-full">
+                                                        <div class="flex flex-col">
+                                                            <span class="text-base font-semibold ">
+                                                                {{ i18n.order_number }}{{ order.id }}
+                                                            </span>
+                                                            <span class="text-xs ">{{ order.date_created }}</span>
+                                                        </div>
+
+                                                        <div class="flex items-center gap-2">
+                                                            <div class="bg-green-300 text-green-900 inline-flex items-center gap-x-2 px-2.5 py-1 rounded-full text-xs font-semibold shadow-sm transition-all mx-1" v-if="order && (order.supplier_total || order.supplier_total === 0)">
+                                                                <span>{{ order.supplier_total_formatted || ((order.currency_symbol || '') + Number(order.supplier_total || 0).toFixed(2)) }}</span>
+                                                            </div>
+                                                            <transition name="fade-slide-badge" mode="out-in">
+                                                                <span
+                                                                    :key="order.supplier_status"
+                                                                    class="inline-flex items-center gap-x-2 px-2.5 py-1 rounded-full text-xs font-semibold shadow-sm transition-all mx-1"
+                                                                    :class="{
+                                                                        'bg-green-100 text-green-700': order.supplier_status === 'fulfilled',
+                                                                        'bg-blue-200 text-blue-700': order.supplier_status === 'ready-to-fulfill',
+                                                                        'bg-yellow-100 text-yellow-700': order.supplier_status === 'partially-fulfilled',
+                                                                        'bg-gray-200 text-gray-600': order.supplier_status === 'pending',
+                                                                    }"
+                                                                >
+                                                                    <i
+                                                                        :class="{
+                                                                            'pi pi-check-circle': order.supplier_status === 'fulfilled',
+                                                                            'pi pi-send': order.supplier_status === 'ready-to-fulfill',
+                                                                            'pi pi-exclamation-triangle': order.supplier_status === 'partially-fulfilled',
+                                                                            'pi pi-clock': order.supplier_status === 'pending'
+                                                                        }"
+                                                                        class="text-sm"
+                                                                    />
+
+                                                                    <span v-if="!mobile">
+                                                                        {{ order.supplier_status.replace(/-/g, ' ').toUpperCase() }}
+                                                                    </span>
+                                                                </span>
+                                                            </transition>
+
+                                                            <!-- Fulfill Button -->
+                                                            <transition name="fade-scale" appear>
+                                                                <div
+                                                                    v-if="order.supplier_status === 'ready-to-fulfill'"
+                                                                    class="inline-block"
+                                                                >
+                                                                    <Button
+                                                                        icon="pi pi-truck"
+                                                                        v-tooltip.top="i18n.mark_as_fulfilled"
+                                                                        @click.stop="openFulfillmentModal(order)"
+                                                                        severity="success"
+                                                                        variant="text"
+                                                                        rounded
+                                                                    />
+                                                                </div>
+                                                            </transition>
+
+                                                            <!-- ⚙️ Cog Menu Per Order -->
+                                                            <Menu
+                                                                :ref="el => orderMenus[order.id] = el"
+                                                                :model="getOrderActions(order)"
+                                                                :popup="true"
+                                                                appendTo="body"
+                                                            />
+
+                                                            <transition name="fade-scale" appear>
+                                                                <!-- Render only if there are menu actions -->
+                                                                <Button
+                                                                    v-if="getOrderActions(order).length"
+                                                                    icon="pi pi-briefcase"
+                                                                    v-tooltip.bottom="'Actions'"
+                                                                    @click="orderMenus[order.id]?.toggle($event)"
+                                                                    severity="secondary"
+                                                                    variant="text"
+                                                                    rounded
+                                                                />
+                                                            </transition>
+                                                        </div>
+                                                    </div>
+                                                </template>
+
+                                                <Card class="-50 shadow-sm border rounded-xl overflow-hidden my-4">
+                                                    <template #title>
+                                                        <div class="flex items-center gap-2  text-lg font-semibold">
+                                                            <i class="pi pi-user"></i>
+                                                            <span>{{ i18n.customer_info }}</span>
+                                                        </div>
+                                                    </template>
+
+                                                    <template #content>
+                                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm ">
+                                                        
+                                                            <div class="flex items-center gap-2">
+                                                                <i class="pi pi-id-card "></i>
+                                                                <span class="font-medium">{{ i18n.name }}:</span>
+                                                                <span>{{ order.customer.first_name }} {{ order.customer.last_name }}</span>
+                                                            </div>
+
+                                                            <div v-if="order.customer.shipping_company" class="flex items-center gap-2">
+                                                                <i class="pi pi-building "></i>
+                                                                <span class="font-medium">{{ i18n.company }}:</span>
+                                                                <span>{{ order.customer.shipping_company }}</span>
+                                                            </div>
+
+                                                            <div class="flex items-center gap-2">
+                                                                <i class="pi pi-envelope "></i>
+                                                                <span class="font-medium">{{ i18n.email }}:</span>
+                                                                <span>{{ order.customer.email || i18n.n_a }}</span>
+                                                            </div>
+
+                                                            <div v-if="order.customer.phone" class="flex items-center gap-2">
+                                                                <i class="pi pi-phone "></i>
+                                                                <span class="font-medium">{{ i18n.phone }}:</span>
+                                                                <span>{{ order.customer.phone || i18n.n_a }}</span>
+                                                            </div>
+
+                                                            <div class="flex items-center gap-2">
+                                                                <i class="pi pi-truck "></i>
+
+                                                                <span class="font-medium">{{ i18n.shipping_address }}:</span>
+
+                                                                <span>
+                                                                    {{ order.customer.shipping_address_1 }}{{ order.customer.shipping_address_2 ? ', ' + order.customer.shipping_address_2 : '' }},
+                                                                    {{ order.customer.shipping_city }}, {{ order.customer.shipping_state }} {{ order.customer.shipping_postcode }},
+                                                                    {{ order.customer.shipping_country }}
+                                                                </span>
+
+                                                            </div>
+                                                        </div>
+                                                    </template>
+                                                </Card>
+
+                                                <!-- All groups: ungrouped + tracking, inside ONE transition-group -->
+                                                <transition-group
+                                                    tag="div"
+                                                    class="space-y-4"
+                                                    :name="isRtl ? '__hc_sp_portal_slide-rtl' : '__hc_sp_portal_slide-ltr'"
+                                                >
+
+                                                    <!-- Ungrouped Block -->
+                                                    <div 
+                                                        :key="'ungrouped-' + order.id"
+                                                        v-show="order.ungroupedProducts.length > 0"
+                                                        :class="[
+                                                            'tracking-group rounded-xl p-6 shadow-md',
+                                                            { 'fade-in-scale': order.ungroupedProducts.length > 0 }
+                                                        ]"
+                                                    >
+
+                                                        <h3 class="text-lg gap-x-2 font-semibold  mb-4 flex items-center">
+                                                            <i class="pi pi-box text-indigo-600"></i> 
+                                                            <span>{{ i18n.ungrouped_products }}</span>
+                                                        </h3>
+                                                        
+                                                        <draggable
+                                                            :disabled="mobile || order.supplier_status === 'fulfilled'"
+                                                            v-model="order.ungroupedProducts" 
+                                                            v-bind="dragOptions"
+                                                            itemKey="product_id"
+                                                            class="space-y-5"
+                                                            :group="{ name: 'ungrouped-products-' + order.id, pull: true, put: true }"
+                                                            :sort="false"
+                                                            :move="(e) => {
+                                                                // console.log('from:', e.from, 'to:', e.to);
+                                                                return e.from !== e.to;
+                                                            }"
+                                                            ghost-class="sortable-ghost"
+                                                            chosen-class="sortable-chosen"
+                                                            @start="isDragging = true"
+                                                            @end="isDragging = false"
+                                                            @dragenter="() => { dragOverGroupId = 'ungrouped' }"
+                                                            @dragleave="() => { if (dragOverGroupId === 'ungrouped') dragOverGroupId = null }"
+                                                        >
+                                                            <template #item="{ element: product }">
+                                                                <div
+                                                                    :key="product.product_id"
+                                                                    class="flex flex-col sm:flex-row items-start sm:items-center product-card shadow-md cursor-grab"
+                                                                >
+                                                                    <!-- Product Image -->
+                                                                    <Image
+                                                                        :src="product.thumbnail"
+                                                                        alt="product image"
+                                                                        preview
+                                                                        class="flex-shrink-0 mx-auto sm:mx-0"
+                                                                        :pt="{
+                                                                            root: { class: 'rounded-lg overflow-hidden' },
+                                                                            image: { class: 'w-20 h-20 object-cover' }
+                                                                        }"
+                                                                        loading="lazy"                                                     
+                                                                    />
+
+                                                                    <!-- Product Details -->
+                                                                    <div class="flex-1 w-full text-sm sm:text-base">
+                                                                        <h3 class="text-base sm:text-lg font-semibold  mb-2">
+                                                                            {{ product.product_name || '[No Name]' }}
+                                                                        </h3>
+
+                                                                        <p v-if="product.sku" class=" mb-1">
+                                                                            <span class="font-semibold">{{ i18n.sku }}:</span>
+                                                                            {{ product.sku || i18n.n_a }}
+                                                                        </p>
+
+                                                                        <p v-if="product.qty" class=" mb-1">
+                                                                            <span class="font-semibold">{{ i18n.quantity }}:</span>
+                                                                            {{ product.qty || i18n.n_a }}
+                                                                        </p>
+
+                                                                        <!-- Note Section -->
+                                                                        <div class="mt-3">
+                                                                            <div
+                                                                                v-if="product.note"
+                                                                                class="flex flex-col sm:flex-row items-center justify-between gap-2 bg-blue-50 border border-blue-200 p-2 rounded-lg text-blue-700 text-sm" 
+                                                                            >
+                                                                                <!-- Note Text -->
+                                                                                <div class="flex items-center gap-2">
+                                                                                    <i class="pi pi-info-circle"></i>
+                                                                                    <span>{{ product.note }}</span>
+                                                                                </div>
+
+                                                                                <!-- Actions -->
+                                                                                <div class="flex items-center">
+                                                                                    <Button
+                                                                                        icon="pi pi-pencil"
+                                                                                        @click="openNoteEditor(order, product)"
+                                                                                        v-tooltip.bottom="i18n.edit_note"
+                                                                                        severity="info"
+                                                                                        variant="text"
+                                                                                        size="small"
+                                                                                        rounded
+                                                                                    />
+                                                                                    <Button
+                                                                                        icon="pi pi-trash"
+                                                                                        @click="deleteNote(order, product)"
+                                                                                        v-tooltip.bottom="i18n.delete_note"
+                                                                                        severity="danger"
+                                                                                        variant="text"
+                                                                                        size="small"
+                                                                                        rounded
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+
+                                                                            <!-- Add Note Button if no note -->
+                                                                            <div v-else>
+                                                                                <Button
+                                                                                    icon="pi pi-pencil"
+                                                                                    :label="i18n.add_note"
+                                                                                    @click="openNoteEditor(order, product)"
+                                                                                    v-tooltip.bottom="i18n.add_note"
+                                                                                    severity="success"
+                                                                                    variant="outlined"
+                                                                                    size="small"
+                                                                                    rounded
+                                                                                />
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </template>
+                                                        </draggable>
+                                                    </div>
+
+                                                    <!-- Tracking Groups -->
+                                                    <div
+                                                        v-for="(group, index) in order.trackingGroups"
+                                                        :key="group.id"
+                                                        :id="group.id"
+                                                        class="tracking-group rounded-xl p-6 shadow-md"
+                                                    >
+                                                        <div class="flex justify-between items-center mb-4">
+                                                            <h3 class="text-lg gap-x-2 font-semibold  mb-4 flex items-center">
+                                                                <i class="pi pi-barcode text-green-600"></i> 
+                                                                <span>{{ i18n.tracking_number }}: {{ group.tracking_number }}</span>
+                                                            </h3>
+                                                            <div>
+                                                                <Button
+                                                                    v-if="mobile && hasProductsToMove(order, group) && order.supplier_status !== 'fulfilled'"
+                                                                    icon="pi pi-plus"
+                                                                    @click="openMoveProductsModal(order, group)"
+                                                                    v-tooltip.top="i18n.add_products_to_group"
+                                                                    severity="success"
+                                                                    variant="text"
+                                                                    rounded
+                                                                />
+                                                                    
+                                                                <Button
+                                                                    v-if="order.supplier_status !== 'fulfilled'"
+                                                                    icon="pi pi-times"
+                                                                    @click="removeTrackingGroup(order, index)"
+                                                                    v-tooltip.top="i18n.remove_group_tooltip"
+                                                                    severity="danger"
+                                                                    variant="text"
+                                                                    rounded
+                                                                />
+                                                            </div>
+                                                        </div>
+
+                                                        <div
+                                                            class="relative min-h-[130px]"
+                                                        >
+                                                            <div
+                                                                v-if="group.products.length === 0"
+                                                                @dragenter="() => { dragOverGroupId = group.id; }"
+                                                                @dragleave="() => { if (dragOverGroupId === group.id) dragOverGroupId = null; }"
+                                                                @dragover.prevent
+                                                                @drop.prevent
+                                                                :class="[
+                                                                    'absolute inset-0 flex flex-col items-center justify-center rounded-xl z-10 transition-all duration-300 pointer-events-auto select-none',
+                                                                    'text-blue-700 font-medium gap-2 px-6 py-4 text-center',
+                                                                    {
+                                                                        'dragging-over': dragOverGroupId === group.id,
+                                                                        'is-dragging': isDragging,
+                                                                        'default-border': !(dragOverGroupId === group.id || isDragging)
+                                                                    }
+                                                                ]"
+
+                                                            >
+                                                                <i class="pi pi-arrow-right-arrow-left text-xl" />
+
+                                                                <span
+                                                                    role="button"
+                                                                    tabindex="0"
+                                                                    @click="openMoveProductsModal(order, group)"
+                                                                    @keydown.enter.space.prevent="mobile && openMoveProductsModal(order, group)"
+                                                                    class="cursor-pointer text-blue-700 hover:text-blue-900 transition"
+                                                                >
+                                                                    {{ mobile ? i18n.tap_here_to_move_products : i18n.tap_or_drag_products_here }}
+                                                                </span>
+
+                                                            </div>
+
+                                                            <draggable
+                                                                :disabled="mobile || order.supplier_status === 'fulfilled'"
+                                                                v-if="group && group.products"
+                                                                v-model="group.products"
+                                                                v-bind="dragOptions"
+                                                                itemKey="product_id"
+                                                                :class="['group-products flex flex-col gap-y-4', { 'dragging-active': isDragging }]"
+                                                                ghost-class="sortable-ghost"
+                                                                chosen-class="sortable-chosen"
+                                                                :item-key="'product_id'"
+                                                                :group="{ name: 'group-products-'+ group.id + order.id, pull: true, put: true }"
+                                                                :sort="false"
+                                                                :move="(e) => {
+                                                                    // console.log('from:', e.from, 'to:', e.to);
+                                                                    return e.from !== e.to;
+                                                                }"
+                                                                @start="isDragging = true"
+                                                                @end="isDragging = false"
+                                                                @change="handleGroupChange(order, $event)"
+                                                                @dragenter="() => { dragOverGroupId = group.id; }"
+                                                                @dragleave="() => { if (dragOverGroupId === group.id) dragOverGroupId = null; }"
+                                                            >
+                                                                <template #item="{ element: product }">
+                                                                    <div
+                                                                        :key="product.product_id"
+                                                                        class="flex flex-col sm:flex-row items-start sm:items-center product-card shadow-md cursor-grab"
+                                                                    >
+                                                                        <!-- Product Image -->
+                                                                        <Image
+                                                                            :src="product.thumbnail"
+                                                                            alt="product image"
+                                                                            preview
+                                                                            class="flex-shrink-0 mx-auto sm:mx-0"
+                                                                            :pt="{
+                                                                                root: { class: 'rounded-lg overflow-hidden' },
+                                                                                image: { class: 'w-20 h-20 object-cover' }
+                                                                            }"
+                                                                            loading="lazy"                                                   
+                                                                        />
+
+                                                                        <!-- Product Details -->
+                                                                        <div class="flex-1 w-full text-sm sm:text-base">
+                                                                            <h3 class="text-base sm:text-lg font-semibold  mb-2">
+                                                                                {{ product.product_name || '[No Name]' }}
+                                                                            </h3>
+
+                                                                            <p v-if="product.sku" class=" mb-1">
+                                                                                <span class="font-semibold">{{ i18n.sku }}:</span>
+                                                                                {{ product.sku || i18n.n_a }}
+                                                                            </p>
+
+                                                                            <p v-if="product.qty" class=" mb-1">
+                                                                                <span class="font-semibold">{{ i18n.quantity }}:</span>
+                                                                                {{ product.qty || i18n.n_a }}
+                                                                            </p>
+
+                                                                            <!-- Note Section -->
+                                                                            <div class="mt-3">
+                                                                                <div
+                                                                                    v-if="product.note"
+                                                                                    class="flex flex-col sm:flex-row items-center justify-between gap-2 bg-blue-50 border border-blue-200 p-2 rounded-lg text-blue-700 text-sm" 
+                                                                                >
+                                                                                    <!-- Note Text -->
+                                                                                    <div class="flex items-center gap-2">
+                                                                                        <i class="pi pi-info-circle"></i>
+                                                                                        <span>{{ product.note }}</span>
+                                                                                    </div>
+
+                                                                                    <!-- Actions -->
+                                                                                    <div class="flex items-center">
+                                                                                        <Button
+                                                                                            v-if="order.supplier_status !== 'fulfilled'"
+                                                                                            icon="pi pi-pencil"
+                                                                                            @click="openNoteEditor(order, product)"
+                                                                                            v-tooltip.bottom="i18n.edit_note"
+                                                                                            severity="info"
+                                                                                            variant="text"
+                                                                                            size="small"
+                                                                                            rounded
+                                                                                            
+                                                                                        />
+                                                                                        <Button
+                                                                                            v-if="order.supplier_status !== 'fulfilled'"
+                                                                                            icon="pi pi-trash"
+                                                                                            @click="deleteNote(order, product)"
+                                                                                            v-tooltip.bottom="i18n.delete_note"
+                                                                                            severity="danger"
+                                                                                            variant="text"
+                                                                                            size="small"
+                                                                                            rounded
+                                                                                        />
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                <!-- Add Note Button if no note -->
+                                                                                <div v-else>
+                                                                                    <Button
+                                                                                        v-if="order.supplier_status !== 'fulfilled'"
+                                                                                        icon="pi pi-pencil"
+                                                                                        :label="i18n.add_note"
+                                                                                        @click="openNoteEditor(order, product)"
+                                                                                        v-tooltip.bottom="i18n.add_note"
+                                                                                        severity="success"
+                                                                                        variant="outlined"
+                                                                                        size="small"
+                                                                                        rounded
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </template>
+                                                            </draggable>
+                                                        </div>
+                                                    </div>
+                                                </transition-group>
+                                            </Panel>
+                                        </transition>
+                                        </template>
+                                    </VirtualScroller>
+
+                                    
+                                </transition>
+                            </main>
+                        </transition>
+
+
+                        <Dialog 
+                            v-model:visible="fulfillmentDialog.visible"
+                            :header="i18n.confirm_fulfillment"
+                            :modal="true"
+                            :style="{ width: '700px', maxWidth: '90vw' }"
+                        >
+                            <template #default>
+                                <div class="space-y-4 text-center">
+                                    <p class="text-lg font-medium ">
+                                        {{ i18n.confirm_fulfillment_text }}
+                                    </p>
+                                    <p class="text-xl font-bold ">Order #{{ fulfillmentDialog.order?.id }}</p>
+
+                                    <p class="text-sm ">
+                                        {{ i18n.fulfillment_info_text }}
+                                    </p>
+                                </div>
+                            </template>
+
+                            <template #footer>
+                                <Button 
+                                    :label="i18n.cancel" 
+                                    :disabled="confirmfulfillmentSubmitted" 
+                                    @click="fulfillmentDialog.visible = false"
+                                    severity="secondary"
+                                    raised
+                                />
+                                <Button 
+                                    :label="i18n.confirm_submit"
+                                    icon="pi pi-check" 
+                                    :loading="confirmfulfillmentSubmitted" 
+                                    :disabled="confirmfulfillmentSubmitted"
+                                    @click="confirmSupplierFulfillment"
+                                    severity="contrast"
+                                    raised
+                                />
+                            </template>
+                        </Dialog>
+
+                        <Dialog 
+                            v-model:visible="newTrackingDialog.visible"
+                            :header="i18n.add_tracking_number"
+                            :modal="true"
+                            :closable="true"
+                            :style="{ width: '500px' }"
+                        >
+                            <template #default>
+                                <div class="flex-1 pt-2">
+                                    <FloatLabel variant="on">
+                                        <IconField>
+                                            <InputIcon class="pi pi-barcode" />
+                                            <InputText
+                                                id="tracking"
+                                                v-model="newTrackingDialog.tracking_number"
+                                                class="w-full"
+                                            />
+                                        </IconField>
+                                        <label for="tracking">Tracking Number</label>
+                                    </FloatLabel>
+                                </div>
+                            </template>
+
+                            <template #footer>
+                                <Button 
+                                    :label="i18n.cancel" 
+                                    @click="newTrackingDialog.visible = false"
+                                    severity="secondary"
+                                    raised
+                                />
+                                <Button 
+                                    :label="i18n.add_tracking_number"
+                                    icon="pi pi-plus" 
+                                    @click="confirmAddTrackingGroup"
+                                    severity="contrast"
+                                    raised
+                                />
+                            </template>
+                        </Dialog>
+
+                        <Dialog
+                            v-model:visible="noteDialog.visible"
+                            :header="noteDialog.product?.note ? i18n.edit_note : i18n.add_note"
+                            :modal="true"
+                            :style="{ width: '500px' }"
+                        >
+                        <template #default>
+                            <div class="flex-1 pt-2 relative">
+                                <FloatLabel variant="on">
+                                    <!-- Just the Textarea -->
+                                    <Textarea
+                                        id="note"
+                                        v-model="noteDialog.note"
+                                        autoResize
+                                        rows="4"
+                                        class="w-full pl-10"
+                                    />
+                                    <label for="note">{{ i18n.note }}</label>
+                                </FloatLabel>
+                            </div>
+                        </template>
+
+                            <template #footer>
+                                <Button
+                                    :label="i18n.cancel"
+                                    @click="noteDialog.visible = false"
+                                    severity="secondary"
+                                    raised
+                                />
+                                <Button
+                                    :label="i18n.save"
+                                    icon="pi pi-check"
+                                    @click="saveProductNote"
+                                    severity="contrast"
+                                    raised
+                                />
+                            </template>
+                        </Dialog>
+
+                        <Dialog
+                            v-model:visible="moveProductsDialog.visible"
+                            :header="i18n.move_products_to_tracking_group"
+                            modal
+                            :style="{ width: '500px', maxHeight: '80vh' }"
+                        >
+                            <template #default>
+                                <div class="space-y-4">
+                                    <p class="">
+                                        {{ i18n.select_products_to_move }} 
+                                        <strong class="text-primary-600">
+                                            {{ i18n.tracking_number }} #{{ moveProductsDialog.group.tracking_number }}
+                                        </strong>
+                                    </p>
+
+                                    <ScrollPanel style="max-height: 400px">
+                                        <div class="space-y-3 py-2 px-4">
+                                            <Card
+                                                v-for="product in allProductsToMove"
+                                                :key="product.product_id + '-' + (product.tracking_number || 'ungrouped')"
+                                                class="-50 shadow-sm border rounded-xl overflow-hidden my-4">
+
+                                            >
+                                                <template #content>
+                                                    <div class="flex items-center gap-3">
+
+                                                        <!-- Checkbox -->
+                                                        <Checkbox
+                                                            variant="filled"
+                                                            size="normal"
+                                                            v-model="selectedProductsToMove"
+                                                            :value="product"
+                                                            @click.stop
+                                                        />
+
+                                                        <!-- Image -->
+                                                        <Image
+                                                            :src="product.thumbnail"
+                                                            alt="product image"
+                                                            preview
+                                                            class="flex-shrink-0 mx-auto sm:mx-0"
+                                                            :pt="{
+                                                                root: { class: 'rounded-lg overflow-hidden' },
+                                                                image: { class: 'w-12 h-12 object-cover' }
+                                                            }"
+                                                        />
+
+                                                        <!-- Product Details -->
+                                                        <div class="flex-1">
+                                                            <div class="font-medium ">
+                                                                {{ product.product_name }}
+                                                            </div>
+                                                            <div
+                                                                v-if="product.tracking_number"
+                                                                class="text-xs "
+                                                            >
+                                                                {{ i18n.currently_in_tracking }}{{ product.tracking_number }}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </template>
+                                            </Card>
+                                        </div>
+                                    </ScrollPanel>
+                                </div>
+                            </template>
+
+                            <template #footer>
+                                <Button
+                                    :label="i18n.cancel" 
+                                    @click="moveProductsDialog.visible = false"
+                                    severity="secondary"
+                                    raised
+                                />
+                                <Button
+                                    :label="i18n.move" 
+                                    icon="pi pi-check"
+                                    @click="confirmMoveProducts"
+                                    :disabled="selectedProductsToMove.length === 0"
+                                    severity="contrast"
+                                    raised
+                                />
+                            </template>
+                        </Dialog>
+
+                        <Dialog 
+                            v-model:visible="searchDialog.visible" 
+                            modal 
+                            dismissableMask 
+                            :header="i18n.search" 
+                            class="w-full"
+                        >
+                            <FloatLabel variant="on">
+                                <IconField class=" my-2">
+                                    <InputIcon class="pi pi-search" />
+                                    <InputText 
+                                        v-model="searchDialog.SearchQuery" 
+                                        id="mobileSearch" 
+                                        class="w-full" 
+                                        autofocus 
+                                    />
+                                </IconField>
+                                <label for="mobileSearch">{{ i18n.search }}</label>
+                            </FloatLabel>
+
+                            <template #footer>
+                                <div class="flex justify-end gap-2">
+                                    <Button 
+                                        :label="i18n.cancel" 
+                                        @click="cancelSearch"
+                                        severity="secondary" 
+                                        raised
+                                    />
+                                    <Button 
+                                        :label="i18n.apply" 
+                                        icon="pi pi-check" 
+                                        @click="applySearch"
+                                        severity="contrast"
+                                        raised
+                                    />
+                                </div>
+                            </template>
+                        </Dialog>
+                    </div>
+                `,
+                computed: {
+                    filteredOrders() {
+                        // Server-side search now; return orders as-is
+                        return this.orders;
+                    },
+
+                    allProductsToMove() {
+                        if (!this.moveProductsDialog.order) return [];
+                        const ungrouped = this.moveProductsDialog.order.ungroupedProducts.map(p => ({
+                            ...p,
+                            tracking_number: null
+                        }));
+                        const grouped = this.moveProductsDialog.order.trackingGroups
+                            .filter(g => g.tracking_number !== this.moveProductsDialog.group.tracking_number)
+                            .flatMap(g =>
+                                g.products.map(p => ({
+                                    ...p,
+                                    tracking_number: g.tracking_number
+                                }))
+                            );
+                        return [...ungrouped, ...grouped];
+                    },
+
+                    dragOptions() {
+                        return {
+                                scroll: true, // Enable the plugin. Can be HTMLElement.
+                                forceAutoScrollFallback: true, // force autoscroll plugin to enable even when native browser autoscroll is available
+                                scrollSensitivity: 30, // px, how near the mouse must be to an edge to start scrolling.
+                                scrollSpeed: 20, // px, speed of the scrolling
+                                bubbleScroll: true // apply autoscroll to all parent elements, allowing for easier movement
+                        };  
+                    },
+                    getGroupOptions() {
+                        // Return a function so you can use it with arguments
+                        return (groupId) => {
+                            return {
+                                name: 'group-' + groupId,
+                                pull: true,
+                                put: true
+                            };
+                        };
+                    }
+                },
+                methods: {
+                    filterOrders() {
+                        // When user selects a new status, reset pagination and fetch orders with the selected status
+                        this.ordersLoaded = false;  // Show loading state while fetching
+                        this.fetchSupplierOrders(true);
+                    },
+
+                    openSearchDialog() {
+                        this.searchDialog.SearchQuery = this.searchQuery;  // prefill with current query
+                        this.searchDialog.visible = true;
+                    },
+                    applySearch() {
+                        this.searchQuery = this.searchDialog.SearchQuery;
+                        this.searchDialog.visible = false;
+                        this.debouncedFetchOrders();
+                    },
+                    onOrdersSearchInput() {
+                        this.searchQuery = this.searchDialog.SearchQuery;
+                        this.debouncedFetchOrders();
+                    },
+                    cancelSearch() {
+                        this.searchDialog.visible = false;
+                    },
+                    debouncedFetchOrders() {
+                        if (this.ordersSearchTimer) {
+                            clearTimeout(this.ordersSearchTimer);
+                        }
+                        this.ordersSearchTimer = setTimeout(() => {
+                            // show loading and reset pagination before fetching
+                            this.ordersLoaded = false;
+                            this.currentPage = 1;
+                            this.fetchSupplierOrders(true);
+                        }, 600);
+                    },
+                    
+                    // ========================================
+                    // 📦 PRODUCT & GROUP MANAGEMENT
+                    // ========================================
+
+                    getOrderActions(order) {
+                        const actions = [];
+
+                        if (order.supplier_status !== 'fulfilled') {
+                            actions.push({
+                                label: this.i18n.add_tracking_number,
+                                icon: 'pi pi-barcode',
+                                command: () => this.addTrackingGroup(order)
+                            });
+                        }
+
+                        return actions;
+                    },
+
+                    /**
+                     * Opens the dialog to create a new tracking group for an order.
+                     */
+                    addTrackingGroup(order) {
+                        this.newTrackingDialog.visible = true;
+                        this.newTrackingDialog.order = order;
+                        this.newTrackingDialog.tracking_number = '';
+                    },
+
+                    /**
+                     * Validates and confirms the creation of a new tracking group.
+                     * Adds the group and scrolls to it.
+                     */
+                    confirmAddTrackingGroup() {
+                        const tracking = this.newTrackingDialog.tracking_number?.trim();
+                        const order = this.newTrackingDialog.order;
+
+                        if (!tracking) {
+                            this.$toast.warning(this.i18n.missing_tracking_number_title, {
+                                description: this.i18n.missing_tracking_number_detail,
+                                duration: 3000
+                            })
+
+                            return;
+                        }
+
+                        if (order.trackingGroups.some(g => g.tracking_number === tracking)) {
+                            this.$toast.warning(this.i18n.tracking_exists_title, {
+                                description: this.i18n.tracking_exists_detail,
+                                duration: 3000
+                            })
+                            return;
+                        }
+
+                        const groupId = 'group-' + tracking;
+
+                        order.trackingGroups.push({
+                            id: groupId,
+                            tracking_number: tracking,
+                            products: []
+                        });
+
+                        this.getDebouncedSave(order.id)(order);
+
+                        this.newTrackingDialog.visible = false;
+                        this.newTrackingDialog.tracking_number = '';
+
+                        // Check if the panel was collapsed
+                        const wasCollapsed = this.panelCollapsedState[order.id] === true;
+
+                        // ✅ Open the panel
+                        this.panelCollapsedState[order.id] = false;
+
+                        // Wait for the panel animation to complete if it was collapsed
+                        if (wasCollapsed) {
+                            // Delay scrolling to wait for expansion animation (adjust time if needed)
+                            setTimeout(() => {
+                                this.scrollToGroup(groupId);
+                            }, 500); // 500ms matches PrimeVue's panel toggle animation
+                        } else {
+                            // Scroll immediately if already expanded
+                            this.scrollToGroup(groupId);
+                        }
+                    },
+
+                    /**
+                     * Removes a tracking group and moves its products back to the ungrouped list.
+                     */
+                    removeTrackingGroup(order, groupIndex) {
+                        const group = order.trackingGroups[groupIndex];
+
+                        if (group.products.length > 0) {
+                            order.ungroupedProducts.push(...group.products);
+                        }
+
+                        order.trackingGroups.splice(groupIndex, 1);
+                       this.getDebouncedSave(order.id)(order);
+                    },
+
+                    hasProductsToMove(order, group) {
+                        const ungrouped = order.ungroupedProducts.length;
+                        const otherGroups = order.trackingGroups.filter(g => g.tracking_number !== group.tracking_number);
+                        const otherGroupsHaveProducts = otherGroups.some(g => g.products.length > 0);
+
+                        return ungrouped > 0 || otherGroupsHaveProducts;
+                    },
+                    
+                    openMoveProductsModal(order, group) {
+                        this.moveProductsDialog = {
+                            visible: true,
+                            order,
+                            group
+                        };
+                    },
+
+                    confirmMoveProducts() {
+                        const targetGroup = this.moveProductsDialog.group;
+                        const order = this.moveProductsDialog.order;
+
+                        // Move selected products to the target group
+                        this.selectedProductsToMove.forEach(product => {
+                            // Remove from current source
+                            if (product.tracking_number) {
+                                const sourceGroup = order.trackingGroups.find(g => g.tracking_number === product.tracking_number);
+                                if (sourceGroup) {
+                                    sourceGroup.products = sourceGroup.products.filter(p => p.product_id !== product.product_id);
+
+                                    // Remove the source group if empty
+                                    if (sourceGroup.products.length === 0) {
+                                        const index = order.trackingGroups.findIndex(g => g.tracking_number === product.tracking_number);
+                                        if (index !== -1) {
+                                            order.trackingGroups.splice(index, 1);
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Remove from ungrouped
+                                order.ungroupedProducts = order.ungroupedProducts.filter(p => p.product_id !== product.product_id);
+                            }
+
+                            // Add to target group
+                            const target = order.trackingGroups.find(g => g.tracking_number === targetGroup.tracking_number);
+                            if (target) {
+                                target.products.push({ ...product, tracking_number: targetGroup.tracking_number });
+                            }
+                        });
+
+                        // Save & close dialog
+                        this.getDebouncedSave(order.id)(order);
+                        this.moveProductsDialog.visible = false;
+                        this.selectedProductsToMove = [];
+                    },
+
+                    /**
+                     * Handles drag-and-drop changes between groups.
+                     * Updates the data structure and saves the state.
+                     */
+                    handleGroupChange(order, event) {
+                        if (event.added || event.removed) {
+                            if (order.ungroupedProducts.length === 0 && this.dragOverGroupId === 'ungrouped') {
+                                this.dragOverGroupId = null;
+                                this.isDragging = false;
+                            }
+
+                            this.getDebouncedSave(order.id)(order);
+                        }
+                    },
+
+                    /**
+                     * Scrolls to a tracking group inside the ScrollPanel using a reliable internal reference.
+                     * @param {string} groupId - The DOM ID of the tracking group element
+                     */
+                    scrollToGroup(groupId) {
+                        const orderIndex = this.filteredOrders.findIndex(order =>
+                            order.trackingGroups?.some(g => g.id === groupId)
+                        );
+
+                        if (orderIndex !== -1 && this.$refs.ordersScrollPanel) {
+
+                            // Wait for DOM to update (virtual scroll), then scroll to the exact group element
+                            this.$nextTick(() => {
+                                setTimeout(() => {
+                                    const el = document.getElementById(groupId);
+                                    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }, 200); // enough time for virtual DOM to render
+                            });
+                        }
+                    },
+
+                    /**
+                     * Reactively updates an order in the local state.
+                     */
+                    updateOrder(updatedData) {
+                        const index = this.orders.findIndex(o => o.id === updatedData.id);
+                        if (index === -1) return;
+
+                        const target = this.orders[index];
+
+                        for (const key in updatedData) {
+                            if (key !== 'id' && updatedData[key] !== undefined && key in target) {
+                                target[key] = updatedData[key];
+                            }
+                        }
+                    },
+
+                    // ========================================
+                    // ✅ ORDER FULFILLMENT & METADATA
+                    // ========================================
+
+                    async fetchSupplierOrders(reset = false, page = null) {
+                        try {
+                            if (reset) {
+                                this.currentPage = 1;
+                                this.orders = [];
+                                this.allOrdersLoaded = false;
+                            }
+
+                            const fetchPage = page !== null ? page : this.currentPage;
+
+                            const result = await wp.apiFetch({
+                                path: `/hc/v1/suppliers/portal/assigned-orders?page=${fetchPage}&per_page=${this.perPage}&sort=${encodeURIComponent(this.sort)}&status=${this.selectedStatus?.value || 'all'}&search=${encodeURIComponent(this.searchQuery || '')}`,
+                                method: 'GET'
+                            });
+
+                            const newOrders = result.orders || [];
+
+                            newOrders.forEach(newOrder => {
+                                const trackingGroups = (newOrder.grouped_products || []).map(group => ({
+                                    id: 'group-' + group.tracking_number,
+                                    tracking_number: group.tracking_number,
+                                    products: group.products
+                                }));
+
+                                const finalOrder = {
+                                    ...newOrder,
+                                    trackingGroups,
+                                    ungroupedProducts: newOrder.ungrouped_products || []
+                                };
+
+                                const existingIndex = this.orders.findIndex(order => order.id === finalOrder.id);
+                               if (existingIndex !== -1) {
+                                    const localSavedAt = this.lastSavedTimestamps?.[finalOrder.id] || 0;
+                                    const rawDate = finalOrder.date_modified;
+                                    const serverModifiedAt = rawDate ? new Date(rawDate).getTime() : 0;
+
+
+                                    // console.log({
+                                    //     id: finalOrder.id,
+                                    //     local: localSavedAt,
+                                    //     server: serverModifiedAt,
+                                    //     isNewer: serverModifiedAt >= localSavedAt
+                                    // });
+
+                                    if (serverModifiedAt >= localSavedAt) {
+                                        this.updateOrder({
+                                        ...this.orders[existingIndex],
+                                        ...finalOrder
+                                        });
+                                    } else {
+                                        console.debug(`⏳ Skipped update for order ${finalOrder.id} — local changes are newer`);
+                                    }
+                                } else {
+                                    this.orders.push(finalOrder);
+                                    this.panelCollapsedState[finalOrder.id] = true;
+
+                                    // OS-level notification if tab is inactive
+                                    if (document.visibilityState === 'hidden') {
+                                        notifyOSWithVibrate({
+                                            title: this.i18n.new_order_notification_title,
+                                            body: this.i18n.new_order_notification_body.replace('%order_id%', finalOrder.id),
+                                            icon: this.mobileIcon
+                                        });
+                                    }
+                                }
+                            });
+
+                            // Sort orders by creation date (latest first)
+                            this.orders.sort((a, b) => {
+                                const dateA = new Date(a.date_created);
+                                const dateB = new Date(b.date_created);
+                                return dateB - dateA;
+                            });
+
+                            // Pagination
+                            const pagination = result.pagination || {};
+                            this.currentPage = pagination.page || fetchPage;
+                            this.totalPages = pagination.total_pages || 1;
+
+                            if (this.currentPage >= this.totalPages || newOrders.length === 0) {
+                                this.allOrdersLoaded = true;
+                            }
+
+                            // Update VirtualScroller layout if needed
+                            this.$nextTick(() => {
+                                const vs = this.$refs.ordersScrollPanel;
+                                vs?.handleResize?.();
+                                vs?.$el?.dispatchEvent(new Event('scroll'));
+                            });
+
+                        } catch (error) {
+                            this.$toast.error(this.i18n.error_loading_orders, {
+                                description: error.message,
+                                duration: 4000
+                            });
+                        } finally {
+                            this.ordersLoaded = true;
+                            this.isLoadingMore = false;
+                        }
+                    },
+                    // handleScroll: debounce(function (event) {
+                    //     const scroller = event.target;
+                    //     if (!scroller) return;
+
+                    //     const scrollTop = scroller.scrollTop;
+                    //     const clientHeight = scroller.clientHeight;
+                    //     const scrollHeight = scroller.scrollHeight;
+                    //     const scrollPosition = scrollTop + clientHeight;
+                    //     const threshold = 10;
+
+                    //     const atBottom = scrollHeight - scrollPosition <= threshold;
+
+                    //     if (
+                    //         atBottom &&
+                    //         !this.isLoadingMore &&
+                    //         !this.allOrdersLoaded
+                    //     ) {
+                    //         this.isLoadingMore = true;
+                    //         this.currentPage++;
+
+                    //         this.$toast
+                    //             .promise(this.fetchSupplierOrders(), {
+                    //             loading: this.i18n.fetching_orders_loading,
+                    //             success: this.i18n.fetching_orders_success,
+                    //             error: (error) =>
+                    //                 this.i18n.fetching_orders_error + ': ' + error.message,
+                    //                 duration: 4000
+                    //             })
+                    //             .unwrap()
+                    //             .finally(() => {
+                    //             this.isLoadingMore = false;
+                    //         });
+                    //     }
+                    // }, 150),
+
+                    openNoteEditor(order, product) {
+                        this.noteDialog.visible = true;
+                        this.noteDialog.order = order;
+                        this.noteDialog.product = product;
+                        this.noteDialog.note = product.note || '';
+                    },
+
+                    saveProductNote() {
+                        const { order, product, note } = this.noteDialog;
+
+                        // Check if note is unchanged
+                        if ((product.note || '') === (note || '')) {
+                            this.$toast.info(this.i18n.no_changes, {
+                                description: this.i18n.no_changes_detail,
+                                duration: 2500
+                            })
+                            this.noteDialog.visible = false;
+                            return;
+                        }
+
+                        // Apply the updated note
+                        product.note = note;
+
+                        this.noteDialog.visible = false;
+                        this.getDebouncedSave(order.id)(order); // trigger save
+                    },
+
+                    deleteNote(order, product) {
+                        product.note = ''; // or null — depending on your data model
+
+                        this.getDebouncedSave(order.id)(order); // trigger save
+                    },
+                    /**
+                     * Opens the confirmation dialog to mark an order as fulfilled.
+                     */
+                    openFulfillmentModal(order) {
+                        if (order.supplier_status === 'fulfilled') {
+                            this.$toast.info(this.i18n.already_fulfilled, {
+                                description: `${this.i18n.order_number}${order.id} - ${this.i18n.already_fulfilled_text}`,
+                                duration: 3000
+                            })
+
+                            return;
+                        }
+
+                        this.fulfillmentDialog.visible = true;
+                        this.fulfillmentDialog.order = order;
+                    },
+
+                    
+                    getDebouncedSave(orderId, debounceDelay = 1000) {
+                        if (!this.debouncedSaves[orderId]) {
+                            this.debouncedSaves[orderId] = debounce((order) => {
+                                this.saveOrderMetadata(order);
+                            }, debounceDelay);
+                        }
+                        return this.debouncedSaves[orderId];
+                    },
+
+                    /**
+                     * Saves updated supplier metadata for an order via the WP REST API.
+                     */
+                    async saveOrderMetadata(order) {
+                        try {
+                            const result = await wp.apiFetch({
+                                path: '/hc/v1/suppliers/portal/save-metadata',
+                                method: 'POST',
+                                data: {
+                                    order_id: order.id,
+                                    metadata: {
+                                        note: order.supplier_note,
+                                        color_tag: order.color_tag,
+                                        ungrouped_products: order.ungroupedProducts,
+                                        grouped_products: order.trackingGroups.map(group => ({
+                                            tracking_number: group.tracking_number,
+                                            products: group.products
+                                        }))
+                                    }
+                                }
+                            });
+
+                            // ✅ Timestamp the local save
+                            this.lastSavedTimestamps[order.id] = Date.now();
+
+                            order.supplier_status = result.status;
+                            this.updateOrder(order);
+
+                            if (order.supplier_status === 'fulfilled') {
+                                this.panelCollapsedState[order.id] = true;
+                            }
+
+                            if (this.fulfillmentDialog.order?.id === order.id) {
+                                this.fulfillmentDialog.order = { ...order };
+                            }
+
+                            this.$toast.success(this.i18n.success, {
+                                description: result.message || this.i18n.order_saved,
+                                duration: 2000
+                            });
+
+                        } catch (error) {
+                            this.$toast.error(this.i18n.error, {
+                                description: error.message || 'Something went wrong',
+                                duration: 3000
+                            });
+                        }
+                    },
+
+                    /**
+                     * Confirms fulfillment and notifies backend.
+                     */
+                    async confirmSupplierFulfillment() {
+                        try {
+                            this.confirmfulfillmentSubmitted = true;
+
+                            const result = await wp.apiFetch({
+                                path: '/hc/v1/suppliers/portal/confirm-fulfillment',
+                                method: 'POST',
+                                data: {
+                                    order_id: this.fulfillmentDialog.order.id
+                                }
+                            });
+
+                            this.fulfillmentDialog.order.supplier_status = result.status;
+                            this.updateOrder(this.fulfillmentDialog.order);
+
+                            if (result.status === 'fulfilled') {
+                                this.panelCollapsedState[this.fulfillmentDialog.order.id] = true;
+                            }
+
+                            this.$toast.success(this.i18n.success, {
+                                description: result.message || this.i18n.confirmed,
+                                duration: 3000
+                            });
+
+                            this.fulfillmentDialog.visible = false;
+
+                        } catch (error) {
+                            this.$toast.error(this.i18n.error, {
+                                description: error.message || 'Failed to confirm fulfillment',
+                                duration: 3000
+                            });
+                        } finally {
+                            this.confirmfulfillmentSubmitted = false;
+                        }
+                    }
+                },  
+                mounted: async function () {
+                    await this.fetchSupplierOrders();
+
+                    this.ordersPollingJob = setInterval(() => {
+                        this.fetchSupplierOrders(false, 1);
+                    }, 30000);
+
+                    // Restore saved collapsed state from localStorage
+                    const saved = localStorage.getItem('hc_supplier_portal_expanded_orders');
+                    let expanded = [];
+                    try {
+                        expanded = JSON.parse(saved) || [];
+                    } catch (e) {}
+
+                    this.orders.forEach(order => {
+                        this.panelCollapsedState[order.id] = !expanded.includes(order.id);
+                    });
+
+                    // Auto open fulfillment modal if ?order_id=X is present
+                    const routeOrderId = parseInt(this.$route.query.order_id);
+                    if (routeOrderId && this.orders.some(o => o.id === routeOrderId)) {
+                        this.panelCollapsedState[routeOrderId] = false;
+
+                    }
+                },
+                beforeUnmount() {
+                    if (this.ordersPollingJob) {
+                        clearInterval(this.ordersPollingJob);
+                    }
+                },
+                watch: {
+                    panelCollapsedState: {
+                        handler(newVal) {
+                            const expanded = Object.entries(newVal)
+                                .filter(([, isCollapsed]) => !isCollapsed) // Only include expanded panels
+                                .map(([id]) => Number(id));
+
+                            const key = 'hc_supplier_portal_expanded_orders';
+
+                            if (expanded.length === 0) {
+                                localStorage.removeItem(key);
+                            } else {
+                                localStorage.setItem(key, JSON.stringify(expanded));
+                            }
+                        },
+                        deep: true
+                    }
+                }
+            };
+
+            const Products = {
+                inject: ['i18n'],
+                data() {
+                    return {
+                        loading: false,
+                        items: [],
+                        selected: [],
+                        page: 1,
+                        perPage: 10,
+                        total: 0,
+                        totalPages: 1,
+                        search: '',
+                        saving: {},
+                        filters: {
+                            global: { value: '' }
+                        },
+                        searchTimer: null,
+                        editDialog: {
+                            visible: false,
+                            item: null,
+                            isVariation: false,
+                            parent: null,
+                        },
+                        variationsDialog: {
+                            visible: false,
+                            product: null,
+                            items: [],
+                            loading: false,
+                        },
+                        
+                    };
+                },
+                methods: {
+                    async fetchProducts() {
+                        this.loading = true;
+                        try {
+                            await waitForWP();
+                            const res = await (wp.apiFetch ? wp.apiFetch({
+                                path: `/hc/v1/suppliers/portal/products?search=${encodeURIComponent(this.search || '')}&page=${this.page}&per_page=${this.perPage}`,
+                                method: 'GET',
+                            }) : wp.apiRequest({
+                                path: `/hc/v1/suppliers/portal/products?search=${encodeURIComponent(this.search || '')}&page=${this.page}&per_page=${this.perPage}`,
+                                method: 'GET',
+                            }));
+                            this.items = res.products || [];
+                            this.total = res.pagination?.total || 0;
+                            this.totalPages = res.pagination?.total_pages || 1;
+                        } catch (e) {
+                            console.error('[Products.fetchProducts] error:', e);
+                            const msg = (e?.data?.message || e?.message || '').toString() || (this.i18n?.request_failed || 'The request failed. Please check your connection.');
+                            this.$toast?.error(this.i18n?.error || 'Error', { description: msg });
+                        } finally {
+                            this.loading = false;
+                        }
+                    },
+                    onPage(event) {
+                        // event.page is 0-based; DataTable also gives rows
+                        this.page = (event.page ?? 0) + 1;
+                        this.perPage = event.rows ?? this.perPage;
+                        this.fetchProducts();
+                    },
+                    onGlobalSearch() {
+                        this.page = 1;
+                        this.search = this.filters.global?.value || '';
+                        this.fetchProducts();
+                    },
+                    onSearchInput() {
+                        // Debounce search to run after user stops typing
+                        if (this.searchTimer) {
+                            clearTimeout(this.searchTimer);
+                        }
+                        this.searchTimer = setTimeout(() => {
+                            this.page = 1;
+                            this.search = this.filters.global?.value || '';
+                            this.fetchProducts();
+                        }, 600);
+                    },
+                    async updateStock(item) {
+                        if (this.saving[item.id]) return;
+                        this.saving = { ...this.saving, [item.id]: true };
+                        try {
+                            await waitForWP();
+                            const req = {
+                                path: '/hc/v1/suppliers/portal/products/update-stock',
+                                method: 'POST',
+                                data: {
+                                    product_id: item.id,
+                                    manage_stock: !!item.manage_stock,
+                                    stock_quantity: item.manage_stock ? Number(item.stock_quantity || 0) : null,
+                                    stock_status: item.stock_status,
+                                    supplier_price: (item.supplier_price ?? '') !== '' ? String(item.supplier_price) : null,
+                                }
+                            };
+                            if (wp.apiFetch) {
+                                await wp.apiFetch(req);
+                            } else {
+                                await wp.apiRequest(req);
+                            }
+                            this.$toast?.success(this.i18n?.success || 'Success');
+                        } catch (e) {
+                            console.error('[Products.updateStock] error:', e);
+                            const msg = (e?.data?.message || e?.message || '').toString() || (this.i18n?.request_failed || 'The request failed. Please check your connection.');
+                            this.$toast?.error(this.i18n?.error || 'Error', { description: msg });
+                        } finally {
+                            this.saving = { ...this.saving, [item.id]: false };
+                        }
+                    },
+                    exportCSV() {
+                        const rows = this.items.map(p => ({
+                            id: p.id,
+                            name: p.name,
+                            sku: p.sku,
+                            manage_stock: p.manage_stock ? '1' : '0',
+                            stock_quantity: p.manage_stock ? (p.stock_quantity ?? '') : '',
+                            stock_status: p.stock_status,
+                        }));
+                        const header = ['id','name','sku','manage_stock','stock_quantity','stock_status'];
+                        const csv = [header.join(','), ...rows.map(r => header.map(h => `"${String(r[h] ?? '').replace(/"/g,'""')}"`).join(','))].join('\n');
+                        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'supplier-products.csv';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    },
+                    openEdit(item) {
+                        // create a shallow copy to edit
+                        this.editDialog.item = { ...item };
+                        this.editDialog.isVariation = false;
+                        this.editDialog.parent = null;
+                        // normalize status immediately so Select has a valid option
+                        this.ensureValidStatus(this.editDialog.item);
+                        this.editDialog.visible = true;
+                    },
+                    openEditVariation(v) {
+                        this.editDialog.item = { ...v };
+                        this.editDialog.isVariation = true;
+                        this.editDialog.parent = this.variationsDialog.product || null;
+                        this.ensureValidStatus(this.editDialog.item);
+                        this.editDialog.visible = true;
+                    },
+                    async saveEdit() {
+                        const item = this.editDialog.item;
+                        if (!item) return;
+                        // Enforce status rules before saving
+                        this.ensureValidStatus(item);
+                        try {
+                            await waitForWP();
+                            if (this.editDialog.isVariation) {
+                                // Start button loading for this variation id
+                                this.saving = { ...this.saving, [item.id]: true };
+                                const req = {
+                                    path: '/hc/v1/suppliers/portal/variations/update-stock',
+                                    method: 'POST',
+                                    data: {
+                                        variation_id: item.id,
+                                        manage_stock: !!item.manage_stock,
+                                        stock_quantity: item.manage_stock ? Number(item.stock_quantity || 0) : null,
+                                        stock_status: item.stock_status,
+                                        supplier_price: (item.supplier_price ?? '') !== '' ? String(item.supplier_price) : null,
+                                    }
+                                };
+                                if (wp.apiFetch) { await wp.apiFetch(req); } else { await wp.apiRequest(req); }
+                                // Close the edit modal first, then refresh the parent variations list
+                                this.editDialog.visible = false;
+                                if (this.variationsDialog.product) {
+                                    const pid = this.variationsDialog.product.id;
+                                    await this.fetchVariations(pid);
+                                    const allOut = (this.variationsDialog.items || []).every(v => {
+                                        const qty = Number(v.stock_quantity ?? 0);
+                                        if (v.manage_stock) return qty <= 0 || v.stock_status === 'outofstock';
+                                        return v.stock_status === 'outofstock';
+                                    });
+                                    const newStatus = allOut ? 'outofstock' : 'instock';
+                                    const idx = this.items.findIndex(p => p.id === pid);
+                                    if (idx !== -1) this.items[idx] = { ...this.items[idx], stock_status: newStatus };
+                                }
+                                // Always refresh the main products list so aggregates (totals, in-stock counts, etc.) are up to date
+                                await this.fetchProducts();
+                            } else {
+                                await this.updateStock(item); // updateStock() already shows success toast
+                                this.fetchProducts();
+                            }
+                            if (this.editDialog.isVariation) {
+                                this.$toast?.success(this.i18n?.success || 'Success');
+                            }
+                        } catch (e) {
+                            console.error('[Products.saveEdit] error:', e);
+                            const msg = (e?.data?.message || e?.message || '').toString() || (this.i18n?.request_failed || 'The request failed. Please check your connection.');
+                            this.$toast?.error(this.i18n?.error || 'Error', { description: msg });
+                            return;
+                        } finally {
+                            if (this.editDialog?.isVariation && this.editDialog?.item?.id) {
+                                this.saving = { ...this.saving, [this.editDialog.item.id]: false };
+                            }
+                            this.editDialog.visible = false;
+                        }
+                    },
+                    ensureValidStatus(item) {
+                        if (!item) return;
+                        const qty = Number(item.stock_quantity ?? 0);
+                        const managed = !!item.manage_stock;
+                        // Disallow onbackorder selection entirely in UI; normalize if present
+                        if (item.stock_status === 'onbackorder') {
+                            item.stock_status = qty > 0 ? 'instock' : 'outofstock';
+                        }
+                        if (managed) {
+                            if (qty <= 0 && item.stock_status !== 'outofstock') {
+                                item.stock_status = 'outofstock';
+                            }
+                            if (qty > 0 && item.stock_status === 'outofstock') {
+                                item.stock_status = 'instock';
+                            }
+                        }
+                    },
+                    statusOptionsFor(item) {
+                        const all = [
+                            { label: this.i18n.instock || 'In stock', value: 'instock' },
+                            { label: this.i18n.outofstock || 'Out of stock', value: 'outofstock' }
+                        ];
+                        if (!item) return all;
+                        const managed = !!item.manage_stock;
+                        if (!managed) return all; // unmanaged: allow instock/outofstock only
+                        const qty = Number(item.stock_quantity ?? 0);
+                        if (qty <= 0) {
+                            return all.filter(o => o.value === 'outofstock');
+                        }
+                        return all.filter(o => o.value !== 'outofstock');
+                    },
+                    statusSeverity(val) {
+                        const v = String(val || '').toLowerCase();
+                        if (v === 'instock') return 'success';
+                        if (v === 'onbackorder') return 'warn';
+                        return 'danger';
+                    },
+                    async openVariations(product) {
+                        this.variationsDialog.product = product;
+                        this.variationsDialog.visible = true;
+                        await this.fetchVariations(product.id);
+                    },
+                    async fetchVariations(productId) {
+                        try {
+                            this.variationsDialog.loading = true;
+                            await waitForWP();
+                            const res = await (wp.apiFetch ? wp.apiFetch({
+                                path: `/hc/v1/suppliers/portal/products/${productId}/variations`,
+                                method: 'GET',
+                            }) : wp.apiRequest({
+                                path: `/hc/v1/suppliers/portal/products/${productId}/variations`,
+                                method: 'GET',
+                            }));
+                            this.variationsDialog.items = res.variations || [];
+                        } catch (e) {
+                            console.error('[Products.fetchVariations] error:', e);
+                            const msg = (e?.data?.message || e?.message || '').toString() || (this.i18n?.request_failed || 'The request failed. Please check your connection.');
+                            this.$toast?.error(this.i18n?.error || 'Error', { description: msg });
+                        } finally {
+                            this.variationsDialog.loading = false;
+                        }
+                    },
+                    
+                },
+                mounted() {
+                    this.fetchProducts();
+                },
+                watch: {
+                    'editDialog.item.stock_quantity'(nv) {
+                        if (this.editDialog?.item) {
+                            this.ensureValidStatus(this.editDialog.item);
+                        }
+                    },
+                    'editDialog.item.manage_stock'(nv) {
+                        if (this.editDialog?.item) {
+                            this.ensureValidStatus(this.editDialog.item);
+                        }
+                    }
+                },
+                template: `
+                    <div class="overflow-y-auto h-full p-4 space-y-4">
+                        <DataTable
+                            :value="items"
+                            dataKey="id"
+                            v-model:selection="selected"
+                            :lazy="true"
+                            :paginator="true"
+                            :rows="perPage"
+                            :totalRecords="total"
+                            @page="onPage"
+                            :loading="loading"
+                            :filters="filters"
+                        >
+                            <template #header>
+                                <div class="flex flex-wrap gap-2 items-center justify-between">
+                                    <h4 class="m-0">{{ i18n.products }}</h4>
+                                    <IconField>
+                                        <InputIcon class="pi pi-search" />
+                                        <InputText v-model="filters.global.value" :placeholder="i18n.search_placeholder || i18n.search || 'Search'" @input="onSearchInput" />
+                                    </IconField>
+                                </div>
+                            </template>
+
+                            <Column selectionMode="multiple" style="width: 3rem" :exportable="false"></Column>
+                            <Column field="id" :header="i18n.id || '#'" style="min-width: 6rem"></Column>
+                            <Column field="name" :header="i18n.name || 'Name'" style="min-width: 16rem">
+                                <template #body="{ data }">
+                                    <div class="flex items-center gap-3 text-center justify-center">
+                                        <Image
+                                            v-if="data.thumbnail"
+                                            :src="data.thumbnail"
+                                            :alt="i18n.product_image_alt || 'product image'"
+                                            preview
+                                            class="flex-shrink-0 mx-auto sm:mx-0"
+                                            :pt="{
+                                                root: { class: 'rounded-lg overflow-hidden' },
+                                                image: { class: 'w-12 h-12 object-cover' }
+                                            }"
+                                        />
+                                        <div>
+                                            <div class="font-medium">{{ data.name }}</div>
+                                            <div class="text-xs text-gray-500">{{ (i18n.id || 'ID') + ': ' + data.id }}</div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </Column>
+                            <Column field="supplier_price" :header="i18n.supplier_price || 'Supplier Price'" style="min-width: 10rem; text-align: center">
+                                <template #body="{ data }">
+                                    <div class="w-full text-center">
+                                        {{ (data.supplier_price ?? '') !== '' 
+                                            ? data.supplier_price 
+                                            : (data.type === 'variable' ? (i18n.per_variation || 'Per variation') : (i18n.not_set || 'Not set')) }}
+                                    </div>
+                                </template>
+                            </Column>
+                            <Column field="sku" :header="i18n.sku || 'SKU'" style="min-width: 10rem">
+                                <template #body="{ data }">
+                                    <span>{{ (data.sku && data.sku.length) ? data.sku : '-' }}</span>
+                                </template>
+                            </Column>
+                            <Column :header="i18n.stock || 'Stock'" style="min-width: 10rem">
+                                <template #body="{ data }">
+                                    <div class="w-full text-center">
+                                        <template v-if="data.type === 'variable'">
+                                            <template v-if="data.manage_stock">
+                                                {{ data.stock_quantity ?? 0 }}
+                                            </template>
+                                            <template v-else>
+                                                <div>
+                                                    <div>{{(data.variation_stock_total ?? 0) }}</div>
+                                                </div>
+                                            </template>
+                                        </template>
+                                        <template v-else>
+                                            {{ (data.manage_stock && (data.stock_quantity ?? null) !== null) ? data.stock_quantity : '-' }}
+                                        </template>
+                                    </div>
+                                </template>
+                            </Column>
+                            <Column :header="i18n.status || 'Status'" style="min-width: 12rem">
+                                <template #body="{ data }">
+                                    <div class="flex items-center gap-2">
+                                        <template v-if="data.type === 'variable' && !data.manage_stock">
+                                            <Tag :value="i18n.per_variation || 'Per variation'" severity="info" />
+                                            <span class="text-xs text-gray-500">{{ (data.variation_instock_count ?? 0) + '/' + (data.variation_total_count ?? 0) + ' ' + (i18n.in_stock || 'in stock') }}</span>
+                                        </template>
+                                        <template v-else>
+                                            <Tag :value="data.stock_status" :severity="statusSeverity(data.stock_status)" />
+                                            <span class="text-xs text-gray-500">{{ data.manage_stock ? (i18n.managed || 'Managed') : (i18n.unmanaged || 'Unmanaged') }}</span>
+                                        </template>
+                                    </div>
+                                </template>
+                            </Column>
+                            <Column :exportable="false" style="min-width: 12rem">
+                                <template #body="{ data }">
+                                    <div class="flex gap-2">
+                                        <Button v-if="data.type !== 'variable'" icon="pi pi-pencil" rounded variant="outlined" :aria-label="i18n.edit || 'Edit'" @click="openEdit(data)" />
+                                        <Button v-else icon="pi pi-sitemap" rounded variant="outlined" :aria-label="i18n.edit_variations || 'Edit Variations'" @click="openVariations(data)" />
+                                    </div>
+                                </template>
+                            </Column>
+                        </DataTable>
+
+                        <Dialog v-model:visible="editDialog.visible" modal :header="i18n.edit || 'Edit'" :style="{ width: '32rem' }">
+                            <div v-if="editDialog.item" class="space-y-4">
+                                <div class="flex items-center gap-3 text-center justify-center">
+                                    <Image v-if="editDialog.isVariation && editDialog.parent && editDialog.parent.thumbnail" :src="editDialog.parent.thumbnail" :alt="i18n.product_image_alt || 'product image'" preview class="flex-shrink-0" :pt="{ root: { class: 'rounded-lg overflow-hidden' }, image: { class: 'w-12 h-12 object-cover' } }" />
+                                    <Image v-if="editDialog.item.thumbnail" :src="editDialog.item.thumbnail" :alt="i18n.product_image_alt || 'product image'" preview class="flex-shrink-0" :pt="{ root: { class: 'rounded-lg overflow-hidden' }, image: { class: 'w-12 h-12 object-cover' } }" />
+                                    <div>
+                                        <template v-if="editDialog.isVariation">
+                                            <div class="text-sm">{{ (editDialog.item.attributes && editDialog.item.attributes.length) ? editDialog.item.attributes.join(', ') : (i18n.attributes || 'Attributes') }}</div>
+                                            <div class="text-xs">{{ i18n.sku || 'SKU' }}: {{ (editDialog.item.sku && editDialog.item.sku.length) ? editDialog.item.sku : '-' }}</div>
+                                        </template>
+                                        <template v-else>
+                                            <div class="font-medium">{{ editDialog.item.name }}</div>
+                                            <div class="text-xs">{{ (i18n.id || 'ID') + ': ' + editDialog.item.id }} • {{ i18n.sku || 'SKU' }}: {{ editDialog.item.sku || (i18n.n_a || 'N/A') }}</div>
+                                        </template>
+                                    </div>
+                                </div>
+                                <Divider />
+                                <div class="grid grid-cols-12 gap-4 items-center">
+                                    <div class="col-span-4 text-sm">{{ i18n.quantity || 'Quantity' }}</div>
+                                    <div class="col-span-8">
+                                        <InputText v-model.number="editDialog.item.stock_quantity" @input="ensureValidStatus(editDialog.item)" :disabled="!editDialog.item.manage_stock" class="w-40" />
+                                        <div v-if="!editDialog.item.manage_stock" class="text-xs mt-1">{{ (i18n.n_a || 'N/A') + ' (' + (i18n.unmanaged || 'Unmanaged') + ')' }}</div>
+                                    </div>
+                                    <div class="col-span-4 text-sm">{{ i18n.supplier_price || 'Supplier Price' }}</div>
+                                    <div class="col-span-8">
+                                        <InputText v-model="editDialog.item.supplier_price" class="w-40" />
+                                    </div>
+                                    <div class="col-span-4 text-sm">{{ i18n.status || 'Status' }}</div>
+                                    <div class="col-span-8">
+                                        <Select
+                                            v-model="editDialog.item.stock_status"
+                                            :options="statusOptionsFor(editDialog.item)"
+                                            optionLabel="label"
+                                            optionValue="value"
+                                            class="w-40"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div class="flex justify-end gap-2 mt-4">
+                                    <Button :label="i18n.cancel" severity="secondary" variant="outlined" @click="editDialog.visible=false" />
+                                    <Button :label="i18n.save" icon="pi pi-check" :loading="!!saving[editDialog.item.id]" @click="saveEdit" />
+                                </div>
+                            </div>
+                        </Dialog>
+
+                        <!-- Variations List Dialog -->
+                        <Dialog v-model:visible="variationsDialog.visible" modal :header="i18n.edit_variations || 'Edit Variations'" :style="{ width: '70%' }">
+                            <div v-if="variationsDialog.product" class="mb-4 flex items-center gap-3">
+                                <Image v-if="variationsDialog.product.thumbnail" :src="variationsDialog.product.thumbnail" :alt="i18n.product_image_alt || 'product image'" preview :pt="{ root: { class: 'rounded-lg overflow-hidden' }, image: { class: 'w-12 h-12 object-cover' } }" />
+                                <div>
+                                    <div class="font-medium">{{ variationsDialog.product.name }}</div>
+                                    <div class="text-xs text-gray-500">{{ (i18n.id || 'ID') + ': ' + variationsDialog.product.id }}</div>
+                                </div>
+                            </div>
+                            <div v-if="variationsDialog.loading" class="space-y-2">
+                                <Skeleton height="2rem" v-for="i in 4" :key="i" />
+                            </div>
+                            <div v-else>
+                                <DataTable :value="variationsDialog.items" dataKey="id">
+                                    <Column field="id" :header="i18n.id || 'ID'" style="min-width: 6rem" />
+                                    <Column :header="i18n.name || 'Name'" style="min-width: 18rem">
+                                        <template #body="{ data }">
+                                            <div class="flex items-center gap-3 text-center justify-center">
+                                                <Image v-if="data.thumbnail" :src="data.thumbnail" :alt="i18n.product_image_alt || 'product image'" preview class="flex-shrink-0" :pt="{ root: { class: 'rounded-lg overflow-hidden' }, image: { class: 'w-12 h-12 object-cover' } }" />
+                                                <div>
+                                                    <div class="text-sm">{{ (data.attributes && data.attributes.length) ? data.attributes.join(', ') : (i18n.attributes || 'Attributes') }}</div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </Column>
+                                    <Column field="sku" :header="i18n.sku || 'SKU'" style="min-width: 10rem">
+                                        <template #body="{ data }">
+                                            <span>{{ (data.sku && data.sku.length) ? data.sku : '-' }}</span>
+                                        </template>
+                                    </Column>
+                                    <Column field="supplier_price" :header="i18n.supplier_price || 'Supplier Price'" style="min-width: 10rem; text-align: center">
+                                        <template #body="{ data }">
+                                            <div class="w-full text-center">{{ (data.supplier_price ?? '') !== '' ? data.supplier_price : (i18n.not_set || 'Not set') }}</div>
+                                        </template>
+                                    </Column>
+                                    <Column :header="i18n.stock || 'Stock'" style="min-width: 8rem">
+                                        <template #body="{ data }">
+                                            <span>{{ (data.manage_stock && (data.stock_quantity ?? null) !== null) ? data.stock_quantity : '-' }}</span>
+                                        </template>
+                                    </Column>
+                                    <Column :header="i18n.status || 'Status'" style="min-width: 10rem">
+                                        <template #body="{ data }">
+                                            <div class="flex items-center gap-2">
+                                                <Tag :value="data.stock_status" :severity="statusSeverity(data.stock_status)" />
+                                                <span class="text-xs text-gray-500">{{ data.manage_stock ? (i18n.managed || 'Managed') : (i18n.unmanaged || 'Unmanaged') }}</span>
+                                            </div>
+                                        </template>
+                                    </Column>
+                                    <Column :exportable="false" style="min-width: 8rem">
+                                        <template #body="{ data }">
+                                            <Button icon="pi pi-pencil" rounded variant="outlined" :aria-label="i18n.edit || 'Edit'" @click="openEditVariation(data)" />
+                                        </template>
+                                    </Column>
+                                </DataTable>
+                            </div>
+                        </Dialog>
+
+                        
+                    </div>
+                `
+            };
+
+            const ChangePassword = {
+                template: `
+                    <div class="overflow-y-auto h-full flex justify-center items-center ">
+                        <!-- Password Change Form inside a Card -->
+                        <Card class="w-full max-w-lg change-password-form-card">
+                            <template #content>
+
+                                <div class="text-center mb-6">
+                                    <h2 class="text-2xl font-semibold  flex items-center justify-center">
+                                        <i class="pi pi-lock mr-2"></i> Secure Your Account
+                                    </h2>
+                                    <p class=" mt-2">Please choose a strong password to keep your account safe.</p>
+                                </div>
+
+                                <form @submit.prevent="onSubmit" class="flex flex-col justify-center items-center space-y-8 w-full">
+
+                                    <!-- New Password Field -->
+                                    <FloatLabel variant="on">
+                                        <Password 
+                                            inputId="password"   
+                                            v-model="password" 
+                                            :feedback="true" 
+                                            :minlength="8"
+                                            :pattern="passwordPattern"
+                                            required
+                                            toggleMask
+                                            autocomplete="new-password"
+                                            :invalid="passwordError"
+                                        >
+                                            <template #header>
+                                                <div class="font-semibold text-lg mb-4 ">{{ i18n.pick_a_password }}</div>
+                                            </template>
+                                            <template #footer>
+                                                <Divider />
+                                                <ul class="pl-2 my-0 leading-normal text-sm ">
+                                                    <li :class="{
+                                                        'text-yellow-500': !passwordRequirements.lowercase, 
+                                                        'text-green-500': passwordRequirements.lowercase
+                                                    }" class="flex items-center">
+                                                        <i :class="{
+                                                            'pi pi-times': !passwordRequirements.lowercase,
+                                                            'pi pi-check': passwordRequirements.lowercase
+                                                        }" class="mr-2"></i>{{ i18n.lowercase_requirement }}
+                                                    </li>
+                                                    <li :class="{
+                                                        'text-yellow-500': !passwordRequirements.uppercase, 
+                                                        'text-green-500': passwordRequirements.uppercase
+                                                    }" class="flex items-center">
+                                                        <i :class="{
+                                                            'pi pi-times': !passwordRequirements.uppercase,
+                                                            'pi pi-check': passwordRequirements.uppercase
+                                                        }" class="mr-2"></i>{{ i18n.uppercase_requirement }}
+                                                    </li>
+                                                    <li :class="{
+                                                        'text-yellow-500': !passwordRequirements.numeric, 
+                                                        'text-green-500': passwordRequirements.numeric
+                                                    }" class="flex items-center">
+                                                        <i :class="{
+                                                            'pi pi-times': !passwordRequirements.numeric,
+                                                            'pi pi-check': passwordRequirements.numeric
+                                                        }" class="mr-2"></i>{{ i18n.numeric_requirement }}
+                                                    </li>
+                                                    <li :class="{
+                                                        'text-yellow-500': !passwordRequirements.minLength, 
+                                                        'text-green-500': passwordRequirements.minLength
+                                                    }" class="flex items-center">
+                                                        <i :class="{
+                                                            'pi pi-times': !passwordRequirements.minLength,
+                                                            'pi pi-check': passwordRequirements.minLength
+                                                        }" class="mr-2"></i>{{ i18n.min_length_requirement }}
+                                                    </li>
+                                                </ul>
+                                            </template>
+                                        </Password>
+                                        <label for="password">{{ i18n.enter_new_password }}</label>
+                                    </FloatLabel>
+
+                                    <!-- Confirm Password Field -->
+                                    <FloatLabel variant="on">
+
+                                        <Password 
+                                            inputId="confirmPassword" 
+                                            v-model="confirmPassword" 
+                                            :feedback="false" 
+                                            required
+                                            toggleMask 
+                                            autocomplete="new-password"
+                                            :invalid="confirmPasswordError"
+                                        />
+
+                                        <label for="confirmPassword">{{ i18n.confirm_password }}</label>
+                                    </FloatLabel>
+                                
+                                    <!-- Submit Button -->
+                                    <Button 
+                                        type="submit"
+                                        :label="i18n.confirm_submit" 
+                                        icon="pi pi-check" 
+                                        class="p-button-primary w-60"
+                                        :disabled="!formIsValid"
+                                    />
+                                </form>
+                            </template>
+                        </Card>
+                    </div>
+                `,
+                inject: ['i18n', 'currentUser'],
+                data() {
+                    return {
+                        password: '',
+                        confirmPassword: '',
+                        passwordError: false,
+                        confirmPasswordError: false,
+                        passwordPattern: '(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)', // Regex pattern for validation
+                        passwordRequirements: {
+                            lowercase: false,
+                            uppercase: false,
+                            numeric: false,
+                            minLength: false,
+                        },
+                    };
+                },
+                computed: {
+                    formIsValid() {
+                        return (
+                            this.password &&
+                            this.confirmPassword &&
+                            this.password === this.confirmPassword &&
+                            !this.passwordError &&
+                            !this.confirmPasswordError
+                        );
+                    }
+                },
+                methods: {
+                    onSubmit() {
+                        if (this.formIsValid) {
+                            // console.log(this.currentUser.attributes)
+                            // Send the AJAX request to change the password
+                            this.changePassword();
+                        } else {
+                            // Show error message using PrimeVue Toast
+                            this.$toast.error(this.i18n.error, {
+                                description: 'cannot change password the form is not valid!',
+                                duration: 3000
+                            })
+                        }
+                    },
+
+                    changePassword() {
+                        wp.apiFetch({
+                            path: '/hc/v1/suppliers/portal/change-password',
+                            method: 'POST',
+                            data: {
+                                new_password: this.password
+                            }
+                        }).then((response) => {
+                            this.$toast.success(this.i18n.success, {
+                                description: response.message,
+                                duration: 3000
+                            });
+
+                            if (response.updated_attributes) {
+                                Object.assign(this.currentUser.attributes, response.updated_attributes);
+                            }
+
+                            this.$nextTick(() => {
+                                this.$router.push('/');
+                            });
+
+                        }).catch((error) => {
+                            console.error('Password change failed:', error);
+
+                            this.$toast.error(this.i18n.error, {
+                                description: error.message || error?.data?.message || 'Something went wrong.',
+                                duration: 3000
+                            });
+                        });
+                    },
+
+
+                    validatePassword() {
+                        this.passwordError =
+                            this.password.length < 8 || !this.password.match(this.passwordPattern);
+
+                        // Set the password requirements
+                        this.passwordRequirements.lowercase = /[a-z]/.test(this.password);
+                        this.passwordRequirements.uppercase = /[A-Z]/.test(this.password);
+                        this.passwordRequirements.numeric = /\d/.test(this.password);
+                        this.passwordRequirements.minLength = this.password.length >= 8;
+                    },
+
+                    validateConfirmPassword() {
+                        this.confirmPasswordError = this.password !== this.confirmPassword;
+                    }
+                },
+                watch: {
+                    password() {
+                        this.validatePassword();
+                        this.validateConfirmPassword();
+                    },
+                    confirmPassword() {
+                        this.validateConfirmPassword();
+                    }
+                }
+            };
+
+
+
+            const Routes = [
+                { 
+                    path: '/orders', 
+                    name: 'orders',
+                    component: Orders,
+                    meta: { title: initialData.i18n.orders }
+
+                },
+                {
+                    path: '/change-password',
+                    name: 'change-password',
+                    component: ChangePassword, // Replace with your actual component
+                },
+                {
+                    path: '/products', 
+                    name: 'products',
+                    component: Products,
+                    meta: { title: initialData.i18n.products }
+                },
+                // Catch-all fallback: redirect unknown paths
+                {
+                    path: '/:pathMatch(.*)*',
+                    redirect: { name: 'orders' }
+                }
+            ]
+            
+            const router = VueRouter.createRouter({
+                history: VueRouter.createWebHashHistory(),
+                routes: Routes
+            });
+
+            router.beforeEach((to, from, next) => {
+                // Set the document title using route's meta title or default
+                document.title = `${initialData.i18n.title} | ${to.meta.title || 'Default Title'}`;
+
+                // Check if user needs to change password
+                const needsToChangePassword = currentUser?.attributes?.needs_to_change_password;
+
+                // If user needs to change password or the property doesn't exist, redirect to 'change-password'
+                if (needsToChangePassword === true || needsToChangePassword === undefined) {
+                    if (to.name !== 'change-password') {
+                        return next({ name: 'change-password' });
+                    }
+                }
+
+                // If user does not need to change password, allow navigation as usual
+                if (needsToChangePassword === false || needsToChangePassword === undefined) {
+                    if (to.name === 'change-password') {
+                        return next({ name: 'orders' }); // Redirect back to orders or another valid route
+                    }
+                }
+
+                // Handle unknown routes (fallback)
+                if (!to.matched.length) {
+                    return next({ name: 'orders' });
+                }
+
+                next();
+            });
+
+            app.component('havencore-app', {
+                inject: ['mobileIcon', 'currentUser'],
+                template: `
+
+                    <Toaster
+                        richColors
+                        theme="system"
+                        :position="mobile ? 'top-center' : 'bottom-center'"
+                        :closeButton="!mobile"
+                    />
+
+
+                    <!-- Mobile Overlay (Shadow Behind Sidebar) -->
+                    <transition name="fade-overlay" appear>
+                        <div 
+                            v-if="mobile && isSidebarOpen"
+                            @click="toggleSidebar"
+                            class="fixed inset-0 z-40 backdrop-overlay"
+                        ></div>
+                    </transition>
+
+
+                    <div class="flex flex-col h-screen">
+                        <!-- Static Header -->
+                        <header class=" py-4 px-5 flex justify-between items-center z-20">
+                            <div class="flex items-center justify-center gap-x-2">
+
+                                <Button 
+                                    severity="secondary"
+                                    raised
+                                    @click="goToHome"
+                                    v-tooltip="{
+                                        value: i18n.back_to_home,
+                                        position: isRtl ? 'right' : 'left'
+                                    }"
+                                >
+                                    <template #icon>
+                                        <Image
+                                            :src="mobileIcon"
+                                            alt="Home"
+                                            :pt="{
+                                                image: {
+                                                class:'w-6 h-6 rounded'
+                                                }
+                                            }"
+                                        />
+                                    </template>
+                                </Button>
+
+
+                                <Button 
+                                    icon="pi pi-bars" 
+                                    v-if="mobile && currentUser.attributes && !currentUser.attributes.needs_to_change_password"
+                                    severity="secondary"
+                                    raised
+                                    @click="toggleSidebar" 
+                                />
+                            </div>
+
+                            <!-- User Avatar Trigger -->
+                            <Button 
+                                variant="text"
+                                rounded
+                                raised
+                                @click="toggleUserMenu"
+                            >
+                                <template #icon>
+                                    <div class="w-8 h-8 flex items-center justify-center rounded-full bg-automatic font-medium text-sm uppercase">
+                                        {{ getUserAvatarOrInitials }}
+                                    </div>
+                                </template>
+                            </Button>
+
+                            <Menu
+                                ref="userMenu"
+                                :model="userMenuItems"
+                                popup
+                            />
+
+                        </header>
+
+                        <!-- Main Area: Sidebar + Content -->
+                        <div class="flex flex-1 overflow-hidden shadow-sm">
+                            <!-- Static Sidebar -->
+                            <aside v-if="!mobile" :class="['w-64', 'flex', 'flex-col', { 'collapsed': isCollapsed }]">
+                                <!-- Sidebar items -->
+                                <ul v-if="currentUser.attributes && !currentUser.attributes.needs_to_change_password" class="list-none m-0 p-4 space-y-2  text-sm flex-grow shrink-0">
+                                    <li v-for="(item, index) in sidebarItems" :key="index" style="line-height: 1rem;">
+                                        <router-link 
+                                            :to="item.route" 
+                                            class="aside-link"
+                                            active-class="aside-link-active"
+                                            v-tooltip="isCollapsed ? item.name : ''" 
+
+                                        >
+                                            <i :class="item.icon + ' shrink-0 transform-none'" /> 
+                                            
+                                            <!-- Label fades in/out -->
+                                            <transition name="fade-label">
+                                                <span v-if="!isCollapsed" class="font-medium">{{ item.name }}</span>
+                                            </transition>
+                                        </router-link>
+                                    </li>
+                                </ul>
+
+                                <!-- Collapse/Expand Button at the bottom -->
+                                <div v-if="currentUser.attributes && !currentUser.attributes.needs_to_change_password" class="flex justify-center p-4 w-full mb-12">
+                                    <button 
+                                        @click="collapseSidebar" 
+                                        class="aside-button mt-auto justify-center"
+                                        v-tooltip="isCollapsed ? i18n.expand : ''" 
+                                    >
+                                        <i :class="{
+                                                'pi pi-chevron-left': !isCollapsed && !isRtl,    
+                                                'pi pi-chevron-right': !isCollapsed && isRtl,    
+                                                'pi pi-chevron-right': isCollapsed && !isRtl,    
+                                                'pi pi-chevron-left': isCollapsed && isRtl       
+                                            }"
+                                        />
+                                        <span v-if="!isCollapsed" class="font-medium text-sm leading-tight">{{ i18n.collapse }}</span>
+                                    </button>
+                                </div>
+                            </aside>
+
+                            <!-- Mobile Sidebar (only on mobile) -->
+                            <transition 
+                                name="slide" 
+                                @before-enter="sidebarBeforeEnter" 
+                                @enter="sidebarEnter" 
+                                @leave="sidebarLeave"
+                            >
+                                <aside 
+                                    v-if="mobile && isSidebarOpen"
+                                    class="fixed top-0 w-64 bg-automatic shadow-md h-full z-50"
+                                >
+                                    <ul class="list-none m-0 p-4 space-y-2  text-sm flex-grow">
+                                        <li v-for="(item, index) in sidebarItems" :key="index">
+                                            <router-link 
+                                                :to="item.route" 
+                                                class="aside-link"
+                                                active-class="aside-link-active"
+                                                @click="closeSidebar"
+                                            >
+                                                <i :class="item.icon + ' transform-none'"></i>
+                                                <span class="font-medium text-sm leading-tight">{{ item.name }}</span>
+                                            </router-link>
+                                        </li>
+                                    </ul>
+                                </aside>
+                            </transition>
+
+                            <!-- Scrollable Main Content -->
+                            <div class="view-container relative flex-1 h-full overflow-hidden">
+                                <router-view v-slot="{ Component }">
+                                    <transition name="card-swap">
+                                        <component
+                                            :is="Component"
+                                            :key="$route.fullPath"
+                                            class="app-content-styled h-full overflow-y-hidden"
+                                        />
+                                    </transition>
+                                </router-view>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                props: [],
+                data() {
+                    // Access the Pinia store
+                    const globalStore = useGlobalStore();
+
+                    // Use a computed property to ensure reactivity
+                    const mobile = Vue.computed(() => globalStore.isMobile);
+
+                    const Rtl = Vue.computed(() => globalStore.isRtl);
+                    
+                    return {
+                        i18n: this.$root.i18n || {},  // Fallback to empty object if i18n is not defined
+                        sidebarItems: this.$root.sidebarItems || {},
+
+                        isCollapsed: false, // Sidebar collapse state
+                        mobile: mobile,
+                        isRtl: Rtl,
+                        isSidebarOpen: false,  // New state to track the sidebar visibility on mobile
+
+                        userMenuItems: [] // inital empty then populate only on Mount hook the prevent undefined
+
+                    };
+                },
+                mounted() {
+
+                    this.userMenuItems = [
+                        {
+                            label: this.currentUser.display_name,
+                            items: [
+                                { separator: true },
+                                {
+                                    label: this.i18n.logout,
+                                    icon: 'pi pi-sign-out',
+                                    command: () => this.logout()
+                                }
+                            ]
+                        }
+                    ];
+
+                    const needsToChangePassword = this.currentUser?.attributes?.needs_to_change_password;
+
+
+                    // Check if 'needs_to_change_password' exists and is truthy
+                    if (needsToChangePassword === true || needsToChangePassword === undefined) {
+                        // If 'needs_to_change_password' is true or doesn't exist, redirect to 'change-password'
+                        this.$router.push({ name: 'change-password' });
+                        if (needsToChangePassword === undefined) {
+                            // console.log('Routing to change-password because it does not exist.');
+                        }
+                    }
+
+                    this.isCollapsed = true;
+
+                    // ✅ Ask for notification permission (if not already handled)
+                    if ('Notification' in window) {
+                        const currentPermission = Notification.permission;
+
+                        if (currentPermission === 'granted') {
+                            console.log('[Notifications] Already granted ✅');
+                        } else if (currentPermission === 'denied') {
+                            console.warn('[Notifications] Previously denied ❌');
+                        } else if (currentPermission === 'default') {
+                            Notification.requestPermission().then(permission => {
+                                if (permission === 'granted') {
+                                    console.log('[Notifications] Permission granted ✅');
+                                } else {
+                                    console.warn('[Notifications] Permission denied or dismissed');
+                                }
+                            });
+                        }
+                    }
+                },
+                computed: {
+                    getUserAvatarOrInitials() {
+                        const avatar = this.currentUser.avatar || '';
+                        const isDefault = avatar.includes('d=mm') ||
+                                        avatar.includes('d=identicon') ||
+                                        avatar.includes('d=retro') ||
+                                        avatar.includes('d=blank') ||
+                                        avatar.includes('d=monsterid') ||
+                                        avatar.includes('d=wavatar') ||
+                                        avatar.includes('d=robohash');
+
+                        if (isDefault) {
+                            const name = (this.currentUser.display_name || this.currentUser.user_login || 'U')
+                                .trim()
+                                .replace(/\s+/g, ' ');
+
+                            const words = name.split(/[\s\-]+/).filter(Boolean);
+
+                            if (words.length === 0) return 'U';
+                            if (words.length === 1) return words[0].substring(0, 2).toUpperCase();
+
+                            return (words[0][0] + words[1][0]).toUpperCase();
+                        }
+
+                        return avatar;
+                    }
+                },
+                methods: {
+                    // =============================
+                    // UserMenu Methods
+                    // =============================
+
+                    toggleUserMenu(event) {
+                        this.$refs.userMenu.toggle(event);
+                    },
+                    logout() {
+                        window.location.href = this.currentUser.logout_url;
+                    },
+
+                    // =============================
+                    // General Utility Methods
+                    // =============================
+
+                    goToHome() {
+                        window.location.href = '<?= home_url(); ?>';
+                    },
+
+                    // =============================
+                    // Sidebar Toggle & Collapse Methods
+                    // =============================
+                    collapseSidebar() {
+                        // console.log("Sidebar collapse clicked", this.isCollapsed);  // Debugging line to check if the method is fired
+                        this.isCollapsed = !this.isCollapsed;
+                    },
+
+                    toggleSidebar() {
+                        if (this.mobile) {
+                            // console.log("Sidebar toggle clicked", this.isSidebarOpen);  // Debugging line to check if the method is fired
+                            this.isSidebarOpen = !this.isSidebarOpen;
+                        }
+                    },
+
+                    closeSidebar() {
+                        if (this.mobile) {
+                            // Set a timeout of 200ms before closing the sidebar
+                            setTimeout(() => {
+                                this.isSidebarOpen = false;  // Close the sidebar after 200ms
+                            }, 0);
+                        }
+                    },
+
+                    // =============================
+                    // Sidebar Transition Methods
+                    // =============================
+                    sidebarBeforeEnter(sidebarElement) {
+                        // Set the initial position off-screen (left for LTR, right for RTL)
+                        if (this.isRtl) {
+                            sidebarElement.style.transform = 'translateX(100%)';  // Right off-screen for RTL
+                        } else {
+                            sidebarElement.style.transform = 'translateX(-100%)';  // Left off-screen for LTR
+                        }
+                    },
+
+                    sidebarEnter(sidebarElement, done) {
+                        // After the transition begins, move the sidebar into place
+                        sidebarElement.offsetHeight;  // Trigger reflow to apply styles correctly
+                        sidebarElement.style.transition = 'transform 0.3s ease-in-out, opacity 0.3s ease-in-out';
+                        sidebarElement.style.transform = 'translateX(0)';  // Move to the visible position
+                        done();  // Finish the transition
+                    },
+
+                    sidebarLeave(sidebarElement, done) {
+                        // When leaving, slide the sidebar off-screen again
+                        if (this.isRtl) {
+                            sidebarElement.style.transform = 'translateX(100%)';  // Slide off to the right for RTL
+                        } else {
+                            sidebarElement.style.transform = 'translateX(-100%)';  // Slide off to the left for LTR
+                        }
+                    }
+                },        
+                watch: {
+                    // Watch for changes to mobile global store
+                    mobile(newValue, oldValue) {                
+                        if (!this.mobile) {
+                            this.isSidebarOpen = false;  // Ensure sidebar is closed when moving to desktop view
+                        }
+
+                    }
+                },
+            });
+
+            app.use(router);
+
+            // First, make sure Pinia is initialized in the parent app
+            const pinia = Pinia.createPinia();  // Initialize Pinia
+
+            // Use Pinia (make sure Pinia is initialized from globalStore.js)
+            app.use(pinia); // Pinia is initialized first
+
+            // Call the global store initialization function after Pinia is installed
+            initializeGlobalStore();
+
+            app.mount('#havencore-app');
+        </script>
+    </body>
+</html>
