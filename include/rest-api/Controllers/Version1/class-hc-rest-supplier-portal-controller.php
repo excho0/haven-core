@@ -194,6 +194,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			$stock_quantity = array_key_exists( 'stock_quantity', (array) $body ) ? $body['stock_quantity'] : null;
 			$stock_status   = isset( $body['stock_status'] ) ? sanitize_text_field( $body['stock_status'] ) : null;
 			$supplier_price = isset( $body['supplier_price'] ) ? sanitize_text_field( (string) $body['supplier_price'] ) : null;
+			$sku            = array_key_exists( 'sku', (array) $body ) ? (string) $body['sku'] : null;
 
 			if ( ! $variation_id ) {
 				return new WP_Error( 'invalid_params', 'Missing variation_id', [ 'status' => 400 ] );
@@ -230,6 +231,10 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				}
 			}
 
+			if ( $sku !== null ) {
+				$variation->set_sku( wc_clean( $sku ) );
+			}
+
 			$variation->save();
 
 			// Update supplier price meta if provided
@@ -241,6 +246,10 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		$after_state = $this->capture_inventory_snapshot( $variation );
 		$changes = $this->detect_inventory_changes( $before_state, $after_state );
 		$attributes = $this->format_variation_attributes( $variation );
+		$thumb_source = get_the_post_thumbnail_url( $variation->get_id(), 'medium' );
+		if ( ! $thumb_source ) {
+			$thumb_source = get_the_post_thumbnail_url( $parent_id, 'medium' );
+		}
 
 		$this->schedule_supplier_product_update_alert(
 			(int) $current->ID,
@@ -254,6 +263,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				'attributes'   => $attributes,
 				'permalink'    => get_permalink( $parent_id ),
 				'edit_link'    => get_edit_post_link( $variation->get_id(), '' ) ?: admin_url( 'post.php?post=' . $variation->get_id() . '&action=edit' ),
+				'thumbnail'    => $thumb_source ?: '',
 			],
 			$changes
 		);
@@ -1079,6 +1089,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		$stock_quantity = isset( $body['stock_quantity'] ) ? max( 0, (int) $body['stock_quantity'] ) : null;
 		$stock_status   = isset( $body['stock_status'] ) ? sanitize_text_field( $body['stock_status'] ) : null;
 		$supplier_price = isset( $body['supplier_price'] ) ? sanitize_text_field( (string) $body['supplier_price'] ) : null;
+		$sku            = array_key_exists( 'sku', (array) $body ) ? (string) $body['sku'] : null;
 
 		if ( ! $product_id ) {
 			return new WP_Error( 'invalid_params', 'Missing product_id', [ 'status' => 400 ] );
@@ -1111,6 +1122,10 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			}
 		}
 
+		if ( $sku !== null ) {
+			$product->set_sku( wc_clean( $sku ) );
+		}
+
 		$product->save();
 
 		// Update supplier price meta if provided
@@ -1123,6 +1138,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		$after_state = $this->capture_inventory_snapshot( $product );
 		$changes = $this->detect_inventory_changes( $before_state, $after_state );
 
+		$thumbnail = get_the_post_thumbnail_url( $product->get_id(), 'medium' );
 		$this->schedule_supplier_product_update_alert(
 			$supplier_id,
 			[
@@ -1134,6 +1150,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				'is_variation' => false,
 				'permalink'    => get_permalink( $product->get_id() ),
 				'edit_link'    => get_edit_post_link( $product->get_id(), '' ) ?: admin_url( 'post.php?post=' . $product->get_id() . '&action=edit' ),
+				'thumbnail'    => $thumbnail ?: '',
 			],
 			$changes
 		);

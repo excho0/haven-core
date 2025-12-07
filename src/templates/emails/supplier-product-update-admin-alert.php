@@ -39,7 +39,7 @@ include HAVEN_CORE_EMAIL_STYLES_PATH;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo esc_html(sprintf(__('Supplier update on %s', HAVEN_CORE_TEXT_DOMAIN), $site_name)); ?></title>
-    <style>
+<style>
         .hc-change-table {
             width: 100%;
             border-collapse: collapse;
@@ -89,6 +89,31 @@ include HAVEN_CORE_EMAIL_STYLES_PATH;
             font-weight: 600;
             margin-top: 18px;
         }
+        .hc-info-card {
+            border: 1px solid #bfdbfe;
+            background: #eff6ff;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 20px;
+        }
+        .hc-info-card strong {
+            color: #1e3a8a;
+        }
+        .hc-product-header {
+            display: flex;
+            align-items: center;
+            flex-direction: column;
+            justify-content: center;
+            gap: 16px;
+            margin-top: 20px;
+        }
+        .hc-product-header img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+        }
     </style>
 </head>
 <body>
@@ -104,16 +129,26 @@ include HAVEN_CORE_EMAIL_STYLES_PATH;
             <h2><?php echo esc_html__('A supplier updated product data', HAVEN_CORE_TEXT_DOMAIN); ?></h2>
             <p><?php echo esc_html__('Here are the details for your review:', HAVEN_CORE_TEXT_DOMAIN); ?></p>
 
-            <h3><?php echo esc_html($product_name); ?></h3>
-            <ul class="hc-meta-list">
-                <li><strong><?php esc_html_e('SKU:', HAVEN_CORE_TEXT_DOMAIN); ?></strong> <?php echo esc_html($product_sku); ?></li>
-                <?php if (!empty($attributes)) : ?>
-                    <li><strong><?php esc_html_e('Attributes:', HAVEN_CORE_TEXT_DOMAIN); ?></strong> <?php echo esc_html($attributes); ?></li>
+            <div class="hc-product-header">
+                <?php if (!empty($product['thumbnail'])) : ?>
+                    <img src="<?php echo esc_url($product['thumbnail']); ?>" alt="<?php echo esc_attr($product_name); ?>" />
                 <?php endif; ?>
-                <li><strong><?php esc_html_e('Supplier:', HAVEN_CORE_TEXT_DOMAIN); ?></strong> <?php echo esc_html($supplier_name); ?> (<?php echo esc_html($supplier_email); ?>)</li>
-                <li><strong><?php esc_html_e('Initiated by:', HAVEN_CORE_TEXT_DOMAIN); ?></strong> <?php echo esc_html($actor_name); ?> <?php echo $actor_email ? '(' . esc_html($actor_email) . ')' : ''; ?></li>
-                <li><strong><?php esc_html_e('Timestamp:', HAVEN_CORE_TEXT_DOMAIN); ?></strong> <?php echo esc_html($triggered_at); ?></li>
-            </ul>
+                <div>
+                    <h3><?php echo esc_html($product_name); ?></h3>
+                    <p style="margin:4px 0 0;font-size:14px;color:#6b7280;">SKU: <?php echo esc_html($product_sku); ?></p>
+                </div>
+            </div>
+
+            <div class="hc-info-card">
+                <ul class="hc-meta-list">
+                    <?php if (!empty($attributes)) : ?>
+                        <li><strong><?php esc_html_e('Attributes:', HAVEN_CORE_TEXT_DOMAIN); ?></strong> <?php echo esc_html($attributes); ?></li>
+                    <?php endif; ?>
+                    <li><strong><?php esc_html_e('Supplier:', HAVEN_CORE_TEXT_DOMAIN); ?></strong> <?php echo esc_html($supplier_name); ?> (<?php echo esc_html($supplier_email); ?>)</li>
+                    <li><strong><?php esc_html_e('Initiated by:', HAVEN_CORE_TEXT_DOMAIN); ?></strong> <?php echo esc_html($actor_name); ?> <?php echo $actor_email ? '(' . esc_html($actor_email) . ')' : ''; ?></li>
+                    <li><strong><?php esc_html_e('Timestamp:', HAVEN_CORE_TEXT_DOMAIN); ?></strong> <?php echo esc_html($triggered_at); ?></li>
+                </ul>
+            </div>
 
             <?php if (!empty($changes)) : ?>
                 <table class="hc-change-table">

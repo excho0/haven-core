@@ -2142,6 +2142,7 @@
                                     stock_quantity: item.manage_stock ? Number(item.stock_quantity || 0) : null,
                                     stock_status: item.stock_status,
                                     supplier_price: (item.supplier_price ?? '') !== '' ? String(item.supplier_price) : null,
+                                    sku: (typeof item.sku === 'string') ? item.sku.trim() : (item.sku == null ? '' : String(item.sku))
                                 }
                             };
                             if (wp.apiFetch) {
@@ -2212,6 +2213,7 @@
                                         stock_quantity: item.manage_stock ? Number(item.stock_quantity || 0) : null,
                                         stock_status: item.stock_status,
                                         supplier_price: (item.supplier_price ?? '') !== '' ? String(item.supplier_price) : null,
+                                        sku: (typeof item.sku === 'string') ? item.sku.trim() : (item.sku == null ? '' : String(item.sku))
                                     }
                                 };
                                 if (wp.apiFetch) { await wp.apiFetch(req); } else { await wp.apiRequest(req); }
@@ -2451,6 +2453,10 @@
                                 </div>
                                 <Divider />
                                 <div class="grid grid-cols-12 gap-4 items-center">
+                                    <div class="col-span-4 text-sm">{{ i18n.sku || 'SKU' }}</div>
+                                    <div class="col-span-8">
+                                        <InputText v-model.trim="editDialog.item.sku" class="w-48" />
+                                    </div>
                                     <div class="col-span-4 text-sm">{{ i18n.quantity || 'Quantity' }}</div>
                                     <div class="col-span-8">
                                         <InputText v-model.number="editDialog.item.stock_quantity" @input="ensureValidStatus(editDialog.item)" :disabled="!editDialog.item.manage_stock" class="w-40" />
