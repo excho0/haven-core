@@ -46,6 +46,12 @@ class HC_Settings {
                 'tooltip' => 'Turn on/off the custom login UI that replaces the default WordPress login page',
                 'icon'    => 'pi pi-palette',
             ],
+            'password_reset_page' => [
+                'key'     => 'password_reset_page',
+                'default' => false,
+                'tooltip' => 'Reroute WordPress/WooCommerce password reset emails through the Account Security page.',
+                'icon'    => 'pi pi-lock',
+            ],
         ],
         'suppliers' => [
             'icon' => 'pi pi-users',
@@ -54,12 +60,6 @@ class HC_Settings {
                 'default' => true,
                 'tooltip' => 'Enforces strict field validation when adding new suppliers.',
                 'icon'    => 'pi pi-shield',
-            ],
-            'notify_on_add' => [
-                'key'     => 'notify_on_add',
-                'default' => true,
-                'tooltip' => 'Sends a greeting email when a new supplier is added.',
-                'icon'    => 'pi pi-bell',
             ],
         ],
         // 'integrations' => [
@@ -103,17 +103,62 @@ class HC_Settings {
                 'tooltip' => 'Let customers place orders without paying right away. You review the order and send a payment link when ready.',
                 'icon'    => 'pi pi-clock', // optional: 'pi pi-lock', 'pi pi-hand-stop'
             ],
-            'customer_email_verification' => [
-                'key'     => 'customer_email_verification',
+            'account_security_flow' => [
+                'key'     => 'account_security_flow',
                 'default' => false,
-                'tooltip' => 'Require customers to verify their email address before activating the account. Sends a verification email and disables automatic login.',
-                'icon'    => 'pi pi-envelope',
+                'tooltip' => 'Require customers to verify their email before activating accounts or claiming guest orders. Disables automatic login until verification completes.',
+                'icon'    => 'pi pi-shield',
             ],
-            'password_reset_page' => [
-                'key'     => 'password_reset_page',
-                'default' => false,
-                'tooltip' => 'Reroute WordPress/WooCommerce password reset emails through the Account Security page.',
-                'icon'    => 'pi pi-lock',
+        ],
+        'notifications' => [
+            'icon' => 'pi pi-envelope',
+            'customer_verification_email' => [
+                'key'     => 'notify_customer_verification_email',
+                'default' => true,
+                'tooltip' => 'Send verification emails for new customer accounts and guest checkout claims.',
+                'icon'    => 'pi pi-check-circle',
+            ],
+            'customer_password_reset_email' => [
+                'key'     => 'notify_customer_password_reset_email',
+                'default' => true,
+                'tooltip' => 'Send ' . PLUGIN_NAME . '’s custom password reset emails.',
+                'icon'    => 'pi pi-refresh',
+            ],
+            'customer_account_removal_email' => [
+                'key'     => 'notify_customer_account_removal_email',
+                'default' => true,
+                'tooltip' => 'Send confirmation emails for account removal/cleanup requests.',
+                'icon'    => 'pi pi-user-minus',
+            ],
+            'customer_tracking_emails' => [
+                'key'     => 'notify_customer_tracking_emails',
+                'default' => true,
+                'tooltip' => 'Email customers when suppliers submit tracking details.',
+                'icon'    => 'pi pi-truck',
+            ],
+            'supplier_assignment_email' => [
+                'key'     => 'notify_supplier_assignment_email',
+                'default' => true,
+                'tooltip' => 'Email suppliers whenever a new order is assigned to them.',
+                'icon'    => 'pi pi-briefcase',
+            ],
+            'supplier_welcome_email' => [
+                'key'     => 'notify_supplier_welcome_email',
+                'default' => true,
+                'tooltip' => 'Send welcome/onboarding emails to newly invited suppliers.',
+                'icon'    => 'pi pi-send',
+            ],
+            'customer_payment_reminder_email' => [
+                'key'     => 'notify_customer_payment_reminder_email',
+                'default' => true,
+                'tooltip' => 'Send payment reminder emails when orders are moved back to pending.',
+                'icon'    => 'pi pi-credit-card',
+            ],
+            'notify_admin_supplier_product_updates' => [
+                'key'     => 'notify_admin_supplier_product_updates',
+                'default' => true,
+                'tooltip' => 'Alert the site administrator when suppliers update product inventory or pricing.',
+                'icon'    => 'pi pi-eye',
             ],
         ],
     ];

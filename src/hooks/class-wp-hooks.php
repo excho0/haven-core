@@ -23,7 +23,10 @@ class WP_Hooks
     {
         $settings = new HC_Settings();
 
-        if (!$settings->get('WooCommerce.password_reset_page', false)) {
+        if (
+            !$settings->get('general.password_reset_page', false) ||
+            !$settings->get('notifications.customer_password_reset_email', true)
+        ) {
             return;
         }
 
@@ -85,6 +88,11 @@ class WP_Hooks
      */
     public static function sendWooPasswordResetEmail($user_login, $reset_key): void
     {
+        $settings = new HC_Settings();
+        if (!$settings->get('notifications.customer_password_reset_email', true)) {
+            return;
+        }
+
         $user = get_user_by('login', $user_login);
         if (!$user) {
             return;

@@ -162,7 +162,10 @@ class HC_REST_Telemetry_Controller extends HC_REST_Controller {
 				'validate_callback' => 'rest_validate_request_arg',
 			),
 			'installation_date' => array(
-				'description'       => __( 'Installation date of the HavenCore mobile app.', 'havencore' ),
+                'description'       => sprintf(
+                    __( 'Installation date of the %s mobile app.', 'havencore' ),
+                    PLUGIN_NAME
+                ),
 				'required'          => false, // For backward compatibility.
 				'type'              => 'string',
 				'format'            => 'date-time',

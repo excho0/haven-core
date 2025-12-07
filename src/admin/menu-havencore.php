@@ -28,8 +28,8 @@ function havencore_register_admin_menu() {
 
     // Add the HavenCore top-level menu
     add_menu_page(
-        'HavenCore',             // Page title (browser tab)
-        'HavenCore',             // Menu title (sidebar label)
+        PLUGIN_NAME,             // Page title (browser tab)
+        PLUGIN_NAME,             // Menu title (sidebar label)
         'manage_options',        // Capability required
         'havencore-app',         // Menu slug
         function () {

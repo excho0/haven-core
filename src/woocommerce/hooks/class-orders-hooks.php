@@ -79,7 +79,7 @@ class Orders
         // Catch manual/COD/late payments when status changes from 'pending' to 'processing'
         add_action('woocommerce_order_status_pending_to_processing', [self::class, 'schedule_supplier_email_job'], 10, 1);
 
-        if ($settings->get('WooCommerce.customer_email_verification', false)) {
+        if ($settings->get('WooCommerce.account_security_flow', false)) {
             add_action('woocommerce_thankyou', [self::class, 'handle_guest_checkout_verification'], 25, 1);
         }
 
@@ -216,6 +216,11 @@ class Orders
      */
     private static function send_supplier_email(WC_Order $order, string $supplier_id, array $supplier_data): void
     {
+        $settings = new HC_Settings();
+        if (!$settings->get('notifications.supplier_assignment_email', true)) {
+            return;
+        }
+
         $order_id = $order->get_id();
 
         $service = new HC_Supplier_Service();
@@ -287,6 +292,11 @@ class Orders
      */
     public static function send_customer_payment_email_on_manual_status_change($order_id, $old_status, $new_status, $order): void
     {
+        $settings = new HC_Settings();
+        if (!$settings->get('notifications.customer_payment_reminder_email', true)) {
+            return;
+        }
+
         if ($new_status !== 'pending') {
             return;
         }

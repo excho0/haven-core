@@ -223,7 +223,7 @@ class HC_REST_Manage_Suppliers_V1_Controller extends HC_REST_Controller {
 		}
 
 		$settings = new HC_Settings();
-		if ($settings->get('suppliers.notify_on_add', true)) {
+		if ($settings->get('notifications.supplier_welcome_email', true)) {
 			HC_Supplier_Service::scheduleWelcomeEmail($email, $name, $supplier->get_id(), $supplier->get_password());
 		}
 

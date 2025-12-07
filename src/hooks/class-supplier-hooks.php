@@ -2,7 +2,8 @@
 
 namespace HavenCore\Hooks;
 
-use \HavenCore\Services\HC_Supplier_Service;
+use HavenCore\Classes\HC_Settings;
+use HavenCore\Services\HC_Supplier_Service;
 
 /**
  * Class SupplierHooks
@@ -20,12 +21,19 @@ class SupplierHooks
      */
     public static function register(): void
     {
-        add_action(
-            'havencore_send_supplier_welcome_email',
-            [self::class, 'handleWelcomeEmailJob'],
-            10,
-            3 // ✅ Accept 3 arguments
-        );
+		add_action(
+			'havencore_send_supplier_welcome_email',
+			[self::class, 'handleWelcomeEmailJob'],
+			10,
+			3 // ✅ Accept 3 arguments
+		);
+
+		add_action(
+			'havencore_notify_admin_supplier_product_update',
+			[self::class, 'sendSupplierProductUpdateAlert'],
+			10,
+			1
+		);
 
 
         add_filter('login_redirect', [self::class, 'redirectSupplierLogin'], 10, 3);
@@ -208,6 +216,10 @@ class SupplierHooks
      */
     public static function handleWelcomeEmailJob(string $email, string $supplier_name, string $user_id): void
     {
+        if (!(new HC_Settings())->get('notifications.supplier_welcome_email', true)) {
+            return;
+        }
+
         self::log("🚀 handleWelcomeEmailJob started for $email", $email);
     
         if (empty($email) || empty($supplier_name) || empty($user_id)) {
@@ -268,6 +280,60 @@ class SupplierHooks
         // ✅ Only delete the action ID after all logging is complete
         delete_option("_supplier_email_action_{$email}");
     }
+
+
+	/**
+	 * Sends an alert email to the site administrator whenever a supplier updates product inventory data.
+	 *
+	 * Triggered asynchronously via `havencore_notify_admin_supplier_product_update`.
+	 *
+	 * @param array $args {
+	 *     @type array $payload The email context assembled by the REST controller.
+	 * }
+	 * @return void
+	 */
+	public static function sendSupplierProductUpdateAlert( $args ): void {
+		$settings = new HC_Settings();
+		if ( ! $settings->get( 'notifications.notify_admin_supplier_product_updates', true ) ) {
+			return;
+		}
+
+		$payload = is_array( $args ) && array_key_exists( 'payload', $args ) ? $args['payload'] : ( is_array( $args ) ? $args : [] );
+		if ( empty( $payload ) || empty( $payload['changes'] ) ) {
+			return;
+		}
+
+		$recipient = apply_filters( 'havencore/supplier_update_alert_recipient', get_option( 'admin_email' ), $payload );
+		if ( ! $recipient || ! is_email( $recipient ) ) {
+			return;
+		}
+
+		$template_path = HAVEN_CORE_EMAIL_TEMPLATES_PATH . 'supplier-product-update-admin-alert.php';
+		if ( ! is_readable( $template_path ) ) {
+			error_log( '[' . PLUGIN_NAME . '] Missing supplier product update email template.' );
+			return;
+		}
+
+		$supplier     = $payload['supplier'] ?? [];
+		$product      = $payload['product'] ?? [];
+		$changes      = $payload['changes'] ?? [];
+		$actor        = $payload['actor'] ?? $supplier;
+		$triggered_at = $payload['triggered_at'] ?? current_time( 'mysql' );
+
+		$subject_product_label = $product['name'] ?? ( $product['sku'] ?? ( '#' . ( $product['id'] ?? '' ) ) );
+		$subject = sprintf( '[%s] Supplier update: %s', get_bloginfo( 'name' ), $subject_product_label );
+		$headers = [ 'Content-Type: text/html; charset=UTF-8' ];
+
+		ob_start();
+		include $template_path;
+		$message = ob_get_clean();
+
+		if ( empty( $message ) ) {
+			return;
+		}
+
+		wp_mail( $recipient, $subject, $message, $headers );
+	}
 
 
     /*

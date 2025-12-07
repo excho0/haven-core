@@ -11,6 +11,13 @@
 // ===============================================
 
 /**
+ * Human-friendly plugin title used in UI copy.
+ */
+if (!defined('PLUGIN_NAME')) {
+    define('PLUGIN_NAME', 'HavenCore');
+}
+
+/**
  * Define the custom table prefix of the plugin's tables.
  */
 define('HAVEN_CORE_DB_PREFIX', 'hc_'); 
@@ -120,13 +127,6 @@ use HavenCore\Classes\HC_Settings;
 
 $settings = new HC_Settings();
 
-// Load AJAX functionality
-require_once HAVEN_CORE_PATH . 'ajax/index.php';
-use HavenCore\Ajax\AjaxManager;
-
-require_once HAVEN_CORE_PATH . 'woocommerce/ajax/index.php';
-use HavenCore\WooCommerce\Ajax\Woo_AjaxManager;
-
 // Load WooCommerce-related integrations
 require_once HAVEN_CORE_PATH . 'woocommerce/index.php';
 use HavenCore\WooCommerce\WooCommerceBootstrap;
@@ -165,12 +165,6 @@ if (is_admin()) {
         require_once $file;
     }
 
-
-    // Register AJAX handlers during AJAX requests
-    if (defined('DOING_AJAX') && DOING_AJAX) {
-        AjaxManager::registerAll();
-        Woo_AjaxManager::registerAll();
-    }
 }
 
 use HavenCore\RestApi\Server;

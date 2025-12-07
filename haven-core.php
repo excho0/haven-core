@@ -10,6 +10,10 @@
 // Prevent direct access to this file for security reasons
 if (!defined('ABSPATH')) exit;
 
+if (!defined('PLUGIN_NAME')) {
+    define('PLUGIN_NAME', 'HavenCore');
+}
+
 
 // ================================
 // Composer Autoloader
@@ -32,7 +36,7 @@ if (file_exists($autoload_path)) {
         );
 
         echo '<div class="notice notice-error">';
-        echo '<h2>HavenCore Critical Error</h2>';
+        echo '<h2>' . esc_html( PLUGIN_NAME ) . ' Critical Error</h2>';
         echo '<p>Composer autoloader not found. Please run <code>composer install</code> or include the vendor directory.</p>';
         echo '<p>If the problem persists, please contact us at <a href="mailto:support@havencore.com">support@havencore.com</a>.</p>';
         echo '<p><a href="' . esc_url($deactivate_url) . '" class="button button-secondary">Disable Plugin</a></p>';

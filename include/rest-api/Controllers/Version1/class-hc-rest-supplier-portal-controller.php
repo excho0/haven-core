@@ -6,6 +6,7 @@ use HC_REST_Controller;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_Error;
+use HavenCore\Classes\HC_Settings;
 use HavenCore\Services\HC_Supplier_Service;
 
 class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
@@ -203,17 +204,19 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				return new WP_Error( 'not_found', 'Variation not found', [ 'status' => 404 ] );
 			}
 
-			$parent_id = $variation->get_parent_id();
-			$owner = (int) get_post_meta( $parent_id, '_supplier_id', true );
-			$current = wp_get_current_user();
-			if ( $owner !== (int) $current->ID && ! wc_current_user_has_role( 'administrator' ) ) {
-				return new WP_Error( 'forbidden', 'You cannot update this variation.', [ 'status' => 403 ] );
-			}
+		$parent_id = $variation->get_parent_id();
+		$owner = (int) get_post_meta( $parent_id, '_supplier_id', true );
+		$current = wp_get_current_user();
+		if ( $owner !== (int) $current->ID && ! wc_current_user_has_role( 'administrator' ) ) {
+			return new WP_Error( 'forbidden', 'You cannot update this variation.', [ 'status' => 403 ] );
+		}
 
-			// Optionally update manage_stock first so quantity updates apply
-			if ( $manage_stock !== null ) {
-				$variation->set_manage_stock( (bool) $manage_stock );
-			}
+		$before_state = $this->capture_inventory_snapshot( $variation );
+
+		// Optionally update manage_stock first so quantity updates apply
+		if ( $manage_stock !== null ) {
+			$variation->set_manage_stock( (bool) $manage_stock );
+		}
 
 			// Apply rules similar to simple products; do not handle backorders here
 			if ( $variation->get_manage_stock() && $stock_quantity !== null ) {
@@ -230,13 +233,33 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			$variation->save();
 
 			// Update supplier price meta if provided
-			if ( $supplier_price !== null ) {
-				$normalized = str_replace( ',', '.', preg_replace( '/[^0-9\.,-]/', '', $supplier_price ) );
-				update_post_meta( $variation_id, '_supplier_price', $normalized );
-			}
+		if ( $supplier_price !== null ) {
+			$normalized = str_replace( ',', '.', preg_replace( '/[^0-9\.,-]/', '', $supplier_price ) );
+			update_post_meta( $variation_id, '_supplier_price', $normalized );
+		}
 
-			return new WP_REST_Response( [
-				'message' => 'Variation stock updated',
+		$after_state = $this->capture_inventory_snapshot( $variation );
+		$changes = $this->detect_inventory_changes( $before_state, $after_state );
+		$attributes = $this->format_variation_attributes( $variation );
+
+		$this->schedule_supplier_product_update_alert(
+			(int) $current->ID,
+			[
+				'id'           => $variation->get_id(),
+				'parent_id'    => $parent_id,
+				'name'         => $variation->get_name() ?: get_the_title( $parent_id ),
+				'sku'          => $variation->get_sku(),
+				'type'         => 'variation',
+				'is_variation' => true,
+				'attributes'   => $attributes,
+				'permalink'    => get_permalink( $parent_id ),
+				'edit_link'    => get_edit_post_link( $variation->get_id(), '' ) ?: admin_url( 'post.php?post=' . $variation->get_id() . '&action=edit' ),
+			],
+			$changes
+		);
+
+		return new WP_REST_Response( [
+			'message' => 'Variation stock updated',
 				'variation' => [
 					'id'             => $variation->get_id(),
 					'manage_stock'   => (bool) $variation->get_manage_stock(),
@@ -261,6 +284,163 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 
 	public function validate_numeric( $value, $request, $param ) {
 		return is_numeric( $value );
+	}
+
+	private function capture_inventory_snapshot( \WC_Product $product ): array {
+		$raw_price = get_post_meta( $product->get_id(), '_supplier_price', true );
+		return [
+			'manage_stock'   => (bool) $product->get_manage_stock(),
+			'stock_quantity' => $product->get_manage_stock() ? (int) $product->get_stock_quantity() : null,
+			'stock_status'   => $product->get_stock_status(),
+			'supplier_price' => $this->normalize_supplier_price( $raw_price ),
+		];
+	}
+
+	private function detect_inventory_changes( array $before, array $after ): array {
+		$fields = [
+			'manage_stock'   => 'Stock Management',
+			'stock_quantity' => 'Stock Quantity',
+			'stock_status'   => 'Stock Status',
+			'supplier_price' => 'Supplier Price',
+		];
+
+		$changes = [];
+		foreach ( $fields as $field => $label ) {
+			$previous = $before[ $field ] ?? null;
+			$current  = $after[ $field ] ?? null;
+			if ( $this->normalize_value_for_compare( $field, $previous ) === $this->normalize_value_for_compare( $field, $current ) ) {
+				continue;
+			}
+
+			$changes[] = [
+				'field'  => $label,
+				'before' => $this->format_change_value( $field, $previous ),
+				'after'  => $this->format_change_value( $field, $current ),
+			];
+		}
+
+		return $changes;
+	}
+
+	private function normalize_value_for_compare( string $field, $value ) {
+		if ( $value === '' ) {
+			$value = null;
+		}
+
+		switch ( $field ) {
+			case 'manage_stock':
+				return (bool) $value;
+			case 'stock_quantity':
+				return $value === null ? null : (int) $value;
+			case 'stock_status':
+				return $value === null ? null : strtolower( (string) $value );
+			case 'supplier_price':
+				return $value === null ? null : (float) $value;
+			default:
+				return $value;
+		}
+	}
+
+	private function format_change_value( string $field, $value ): string {
+		if ( $value === null ) {
+			return '—';
+		}
+
+		switch ( $field ) {
+			case 'manage_stock':
+				return $value ? 'Enabled' : 'Disabled';
+			case 'stock_quantity':
+				return number_format_i18n( (int) $value );
+			case 'stock_status':
+				$statuses = function_exists( 'wc_get_stock_statuses' ) ? wc_get_stock_statuses() : [];
+				$lookup = strtolower( (string) $value );
+				return $statuses[ $lookup ] ?? ucwords( $lookup );
+			case 'supplier_price':
+				return $this->format_currency_value( (float) $value );
+			default:
+				return (string) $value;
+		}
+	}
+
+	private function normalize_supplier_price( $value ) {
+		if ( $value === null || $value === '' ) {
+			return null;
+		}
+
+		$normalized = str_replace( ',', '.', preg_replace( '/[^0-9\.,-]/', '', (string) $value ) );
+		return is_numeric( $normalized ) ? (float) $normalized : null;
+	}
+
+	private function format_currency_value( float $value ): string {
+		if ( function_exists( 'wc_price' ) ) {
+			$formatted = wc_price( $value );
+			$formatted = wp_strip_all_tags( $formatted );
+			return trim( html_entity_decode( $formatted, ENT_QUOTES, get_bloginfo( 'charset' ) ) );
+		}
+
+		return (string) $value;
+	}
+
+	private function schedule_supplier_product_update_alert( int $supplier_id, array $product_context, array $changes ): void {
+		if ( empty( $changes ) ) {
+			return;
+		}
+
+		$settings = new HC_Settings();
+		if ( ! $settings->get( 'notifications.notify_admin_supplier_product_updates', true ) ) {
+			return;
+		}
+
+		$supplier = get_user_by( 'id', $supplier_id );
+		if ( ! $supplier ) {
+			return;
+		}
+
+		$current_user = wp_get_current_user();
+		$payload = [
+			'supplier' => [
+				'id'    => $supplier_id,
+				'name'  => $supplier->display_name ?: $supplier->user_login,
+				'email' => $supplier->user_email,
+			],
+			'product' => $product_context,
+			'changes' => $changes,
+			'actor'   => [
+				'id'    => (int) $current_user->ID,
+				'name'  => $current_user->display_name ?: $current_user->user_login,
+				'email' => $current_user->user_email ?? '',
+			],
+			'triggered_at' => current_time( 'mysql' ),
+		];
+
+		if ( function_exists( 'as_enqueue_async_action' ) ) {
+			as_enqueue_async_action( 'havencore_notify_admin_supplier_product_update', [ 'payload' => $payload ], 'hc-supplier-emails' );
+			return;
+		}
+
+		wp_schedule_single_event( time() + 10, 'havencore_notify_admin_supplier_product_update', [ 'payload' => $payload ] );
+	}
+
+	private function format_variation_attributes( \WC_Product $variation ): string {
+		if ( ! method_exists( $variation, 'get_attributes' ) ) {
+			return '';
+		}
+
+		$attributes = $variation->get_attributes();
+		if ( empty( $attributes ) || ! is_array( $attributes ) ) {
+			return '';
+		}
+
+		$parts = [];
+		foreach ( $attributes as $taxonomy => $raw_value ) {
+			$label = is_string( $taxonomy ) && function_exists( 'wc_attribute_label' )
+				? wc_attribute_label( $taxonomy )
+				: ( is_string( $taxonomy ) ? $taxonomy : (string) $taxonomy );
+			$value = is_array( $raw_value ) ? implode( ', ', $raw_value ) : (string) $raw_value;
+			$parts[] = trim( sprintf( '%s: %s', $label, $value ) );
+		}
+
+		return implode( ', ', array_filter( $parts ) );
 	}
 
 	public function change_password( WP_REST_Request $request ) {
@@ -453,7 +633,12 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		include HAVEN_CORE_EMAIL_TEMPLATES_PATH . 'customer-tracking-update-email.php';
 		$email_body = ob_get_clean();
 
-		if ( ! empty( $email_body ) ) {
+		$settings = new HC_Settings();
+
+		if (
+			$settings->get( 'notifications.customer_tracking_emails', true ) &&
+			! empty( $email_body )
+		) {
 			wp_mail(
 				$customer_email,
 				sprintf( __( 'Your Order #%d Has Shipped!', HAVEN_CORE_TEXT_DOMAIN ), $order_id ),
@@ -909,6 +1094,8 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			return new WP_Error( 'forbidden', 'You cannot update stock for this product.', [ 'status' => 403 ] );
 		}
 
+		$before_state = $this->capture_inventory_snapshot( $product );
+
 		if ( $manage_stock !== null ) {
 			$product->set_manage_stock( (bool) $manage_stock );
 		}
@@ -932,6 +1119,24 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			$normalized = str_replace( ',', '.', preg_replace( '/[^0-9\.,-]/', '', $supplier_price ) );
 			update_post_meta( $product_id, '_supplier_price', $normalized );
 		}
+
+		$after_state = $this->capture_inventory_snapshot( $product );
+		$changes = $this->detect_inventory_changes( $before_state, $after_state );
+
+		$this->schedule_supplier_product_update_alert(
+			$supplier_id,
+			[
+				'id'           => $product->get_id(),
+				'parent_id'    => null,
+				'name'         => $product->get_name(),
+				'sku'          => $product->get_sku(),
+				'type'         => $product->get_type(),
+				'is_variation' => false,
+				'permalink'    => get_permalink( $product->get_id() ),
+				'edit_link'    => get_edit_post_link( $product->get_id(), '' ) ?: admin_url( 'post.php?post=' . $product->get_id() . '&action=edit' ),
+			],
+			$changes
+		);
 
 		return new WP_REST_Response( [
 			'message' => 'Stock updated',

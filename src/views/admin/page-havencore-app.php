@@ -34,7 +34,7 @@
         $i18n,
         [
             // ─── Plugin UI ──────────────────────────────────────
-            'plugin_name'         => __('HavenCore', HAVEN_CORE_TEXT_DOMAIN),
+            'plugin_name'         => PLUGIN_NAME,
             'settings'            => __('Settings', HAVEN_CORE_TEXT_DOMAIN),
             'save'                => __('Save Settings', HAVEN_CORE_TEXT_DOMAIN),
             'no_data'             => __('No settings available.', HAVEN_CORE_TEXT_DOMAIN),

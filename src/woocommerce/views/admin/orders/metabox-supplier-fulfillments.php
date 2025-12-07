@@ -617,3 +617,10 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
         app.mount(appTarget);
     })();
 </script>
+
+<style>
+    img {
+        border: none !important;
+        display: inline-block !important;
+    }
+</style>
