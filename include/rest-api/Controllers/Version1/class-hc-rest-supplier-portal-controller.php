@@ -8,6 +8,7 @@ use WP_REST_Response;
 use WP_Error;
 use HavenCore\Classes\HC_Settings;
 use HavenCore\Services\HC_Supplier_Service;
+use HavenCore\WooCommerce\Hooks\Orders;
 
 class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 
@@ -64,6 +65,30 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				'callback'            => [ $this, 'reset_fulfillment' ],
 				'permission_callback' => function () {
 					return is_user_logged_in() && ( current_user_can( 'manage_woocommerce' ) || current_user_can( 'manage_options' ) );
+				},
+			]
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/' . $this->rest_base . '/orders/(?P<order_id>\d+)/suppliers',
+			[
+				'methods'             => 'GET',
+				'callback'            => [ $this, 'get_order_suppliers' ],
+				'permission_callback' => function () {
+					return current_user_can( 'manage_woocommerce' ) || current_user_can( 'manage_options' );
+				},
+			]
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/' . $this->rest_base . '/orders/reassign-supplier',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'reassign_order_supplier' ],
+				'permission_callback' => function () {
+					return current_user_can( 'manage_woocommerce' ) || current_user_can( 'manage_options' );
 				},
 			]
 		);
@@ -725,6 +750,28 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		] );
 	}
 
+	public function get_order_suppliers( WP_REST_Request $request ) {
+		if ( ! current_user_can( 'manage_woocommerce' ) && ! current_user_can( 'manage_options' ) ) {
+			return new WP_Error( 'forbidden', 'Unauthorized', [ 'status' => 403 ] );
+		}
+
+		$order_id = (int) $request->get_param( 'order_id' );
+		if ( ! $order_id ) {
+			return new WP_Error( 'invalid_params', 'Missing order_id.', [ 'status' => 400 ] );
+		}
+
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) {
+			return new WP_Error( 'order_not_found', 'Order not found.', [ 'status' => 404 ] );
+		}
+
+		$cards = $this->build_supplier_cards( $order );
+
+		return new WP_REST_Response( [
+			'suppliers' => $cards,
+		], 200 );
+	}
+
 	public function get_assigned_orders( WP_REST_Request $request ) {
 		if ( ! is_user_logged_in() || ! wc_current_user_has_role( 'supplier' ) ) {
 			return new WP_Error( 'unauthorized', 'Unauthorized', [ 'status' => 403 ] );
@@ -1171,6 +1218,248 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				'supplier_price' => get_post_meta( $product->get_id(), '_supplier_price', true ),
 			]
 		] );
+	}
+
+	public function reassign_order_supplier( WP_REST_Request $request ) {
+		if ( ! current_user_can( 'manage_woocommerce' ) && ! current_user_can( 'manage_options' ) ) {
+			return new WP_Error( 'forbidden', 'Unauthorized', [ 'status' => 403 ] );
+		}
+
+		$order_id = (int) $request->get_param( 'order_id' );
+		$from_id  = (int) $request->get_param( 'from_supplier_id' );
+		$to_id    = (int) $request->get_param( 'to_supplier_id' );
+
+		if ( ! $order_id || ! $from_id || ! $to_id ) {
+			return new WP_Error( 'invalid_params', 'Missing parameters.', [ 'status' => 400 ] );
+		}
+
+		if ( $from_id === $to_id ) {
+			return new WP_Error( 'invalid_params', 'Source and target suppliers must differ.', [ 'status' => 400 ] );
+		}
+
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) {
+			return new WP_Error( 'order_not_found', 'Order not found.', [ 'status' => 404 ] );
+		}
+
+		$supplier_data = get_post_meta( $order_id, '_supplier_data', true );
+		if ( empty( $supplier_data ) || ! is_array( $supplier_data ) || ! isset( $supplier_data[ $from_id ] ) ) {
+			return new WP_Error( 'source_missing', 'Source supplier data not found on this order.', [ 'status' => 400 ] );
+		}
+
+		if ( isset( $supplier_data[ $to_id ] ) ) {
+			return new WP_Error( 'target_exists', 'Target supplier already assigned to this order.', [ 'status' => 400 ] );
+		}
+
+		$target_user = get_user_by( 'id', $to_id );
+		if ( ! $target_user || ! in_array( 'supplier', (array) $target_user->roles, true ) ) {
+			return new WP_Error( 'invalid_target', 'Target user is not a supplier.', [ 'status' => 400 ] );
+		}
+
+		$segment  = $supplier_data[ $from_id ];
+		$original = $supplier_data;
+		unset( $supplier_data[ $from_id ] );
+
+		$new_data = [];
+		foreach ( $original as $sid => $entry ) {
+			if ( (int) $sid === $from_id ) {
+				$new_data[ $to_id ] = $segment;
+				continue;
+			}
+			$new_data[ $sid ] = $entry;
+		}
+
+		update_post_meta( $order_id, '_supplier_data', $new_data );
+
+		$service = new HC_Supplier_Service();
+		$service->unassign_order( $from_id, $order_id );
+		$service->assign_orders( $to_id, [ $order_id ] );
+
+		Orders::schedule_supplier_reassignment_email( $order_id, $to_id );
+
+		return new WP_REST_Response( [ 'message' => 'Supplier reassigned.' ], 200 );
+	}
+
+	private function build_supplier_cards( \WC_Order $order ): array {
+		$supplier_data = get_post_meta( $order->get_id(), '_supplier_data', true );
+		if ( empty( $supplier_data ) || ! is_array( $supplier_data ) ) {
+			return [];
+		}
+
+		$status_map = [
+			'fulfilled'           => [
+				'label' => __( 'Fulfilled', 'woocommerce' ),
+				'badge' => 'success',
+			],
+			'pending'             => [
+				'label' => __( 'Pending', 'woocommerce' ),
+				'badge' => 'warning',
+			],
+			'partially-fulfilled' => [
+				'label' => __( 'Partially Fulfilled', 'woocommerce' ),
+				'badge' => 'info',
+			],
+			'ready-to-fulfill'    => [
+				'label' => __( 'Ready to Fulfill', 'woocommerce' ),
+				'badge' => 'info',
+			],
+		];
+
+		$service = new HC_Supplier_Service();
+		$cards   = [];
+		foreach ( $supplier_data as $supplier_id => $entry ) {
+			$supplier_id = (int) $supplier_id;
+			if ( ! $supplier_id ) {
+				continue;
+			}
+
+			$cards[] = $this->format_supplier_card( $order, $supplier_id, is_array( $entry ) ? $entry : [], $service, $status_map );
+		}
+
+		return $cards;
+	}
+
+	private function format_supplier_card( \WC_Order $order, int $supplier_id, array $entry, HC_Supplier_Service $service, array $status_map ): array {
+		$supplier_instance = $service->get( $supplier_id );
+		$supplier_name     = $supplier_instance ? $supplier_instance->get_name() : __( 'Unknown Supplier', 'woocommerce' );
+		$status_key        = $entry['fulfillment_status'] ?? 'pending';
+		$status_details    = $status_map[ $status_key ] ?? $status_map['pending'];
+
+		$grand_total  = 0;
+		$ungrouped    = $this->map_ungrouped_products( $order, $entry['ungrouped_products'] ?? [], $grand_total );
+		$grouped_data = $this->map_grouped_products( $order, $entry['grouped_products'] ?? [], $grand_total );
+
+		return [
+			'id'                 => $supplier_id,
+			'name'               => $supplier_name,
+			'status'             => [
+				'value' => $status_key,
+				'label' => $status_details['label'],
+				'badge' => $status_details['badge'],
+			],
+			'ungrouped_products' => $ungrouped,
+			'grouped_products'   => $grouped_data,
+			'grand_total'        => $grand_total > 0 ? $this->format_price_display( $grand_total ) : null,
+		];
+	}
+
+	private function map_ungrouped_products( \WC_Order $order, array $items, float &$grand_total ): array {
+		$result = [];
+		foreach ( $items as $product ) {
+			$product_id = isset( $product['product_id'] ) ? (int) $product['product_id'] : 0;
+			if ( ! $product_id ) {
+				continue;
+			}
+
+			$quantity = $this->resolve_order_item_quantity( $order, $product_id );
+			$entry    = $this->build_product_entry( $order, $product_id, $quantity );
+			if ( ! $entry ) {
+				continue;
+			}
+
+			$grand_total += $entry['line_total_raw'];
+			unset( $entry['line_total_raw'] );
+			$result[] = $entry;
+		}
+
+		return $result;
+	}
+
+	private function map_grouped_products( \WC_Order $order, array $groups, float &$grand_total ): array {
+		$result = [];
+		foreach ( $groups as $tracking_number => $products ) {
+			$formatted_products = [];
+			foreach ( $products as $product_id => $details ) {
+				$product_id = (int) $product_id;
+				if ( ! $product_id ) {
+					continue;
+				}
+
+				$qty   = isset( $details['quantity'] ) ? (int) $details['quantity'] : $this->resolve_order_item_quantity( $order, $product_id );
+				$entry = $this->build_product_entry( $order, $product_id, $qty );
+				if ( ! $entry ) {
+					continue;
+				}
+
+				$grand_total += $entry['line_total_raw'];
+				unset( $entry['line_total_raw'] );
+				$formatted_products[] = $entry;
+			}
+
+			$result[] = [
+				'tracking_number' => $tracking_number,
+				'products'        => $formatted_products,
+			];
+		}
+
+		return $result;
+	}
+
+	private function resolve_order_item_quantity( \WC_Order $order, int $product_id ): int {
+		foreach ( $order->get_items() as $item ) {
+			if ( $item instanceof \WC_Order_Item_Product && (int) $item->get_product_id() === $product_id ) {
+				return max( 1, (int) $item->get_quantity() );
+			}
+		}
+
+		return 1;
+	}
+
+	private function build_product_entry( \WC_Order $order, int $product_id, int $quantity ): ?array {
+		$product_name = __( 'Product not found', 'woocommerce' );
+		$variation    = '';
+
+		foreach ( $order->get_items() as $item ) {
+			if ( $item instanceof \WC_Order_Item_Product && (int) $item->get_product_id() === $product_id ) {
+				$product_name = $item->get_name();
+				$variation    = $this->format_item_variation( $item );
+				break;
+			}
+		}
+
+		$product_url = get_permalink( $product_id ) ?: '';
+		$thumbnail   = get_the_post_thumbnail_url( $product_id, 'thumbnail' ) ?: '';
+		$supplier_price = get_post_meta( $product_id, '_supplier_price', true );
+		$price_value    = is_numeric( $supplier_price ) ? (float) $supplier_price : 0;
+		$line_total     = $price_value > 0 ? $price_value * max( 1, $quantity ) : 0;
+
+		return [
+			'product_id'               => $product_id,
+			'quantity'                 => $quantity,
+			'name'                     => $product_name,
+			'variation'                => $variation,
+			'product_url'              => $product_url,
+			'thumbnail'                => $thumbnail,
+			'supplier_price'           => $price_value > 0 ? $price_value : null,
+			'supplier_price_formatted' => $price_value > 0 ? $this->format_price_display( $price_value ) : null,
+			'line_total_formatted'     => $line_total > 0 ? $this->format_price_display( $line_total ) : null,
+			'line_total_raw'           => $line_total,
+		];
+	}
+
+	private function format_item_variation( \WC_Order_Item_Product $item ): string {
+		$meta_data = $item->get_meta_data();
+		$parts     = [];
+		foreach ( $meta_data as $meta ) {
+			if ( strpos( $meta->key, 'attribute_' ) === 0 ) {
+				$label = wc_attribute_label( str_replace( 'attribute_', '', $meta->key ) );
+				$parts[] = $label . ': ' . $meta->value;
+			}
+		}
+
+		return implode( ', ', $parts );
+	}
+
+	private function format_price_display( float $amount ): ?string {
+		if ( $amount <= 0 ) {
+			return null;
+		}
+
+		$text = wp_strip_all_tags( wc_price( $amount ) );
+		$text = html_entity_decode( $text, ENT_QUOTES, get_bloginfo( 'charset' ) );
+		$text = str_replace( "\xc2\xa0", ' ', $text );
+
+		return trim( $text );
 	}
 
 }

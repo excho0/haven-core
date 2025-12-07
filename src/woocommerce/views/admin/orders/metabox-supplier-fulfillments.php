@@ -15,22 +15,15 @@ if ($post instanceof WC_Order) {
 
 $supplier_data = get_post_meta($order_id, '_supplier_data', true) ?: [];
 
-if (!defined('HC_SUPPLIER_FULFILLMENT_VUE')) {
-    define('HC_SUPPLIER_FULFILLMENT_VUE', true);
-
-    ScriptHelpers::loadVue([
-        'withTailwind'    => true,
-        'withGlobalStore' => false,
-        'withSonner'      => false,
-        'withDotLottie'   => false,
-        'withConfetti'    => false,
-        'withDraggable'   => false,
-        'withFrontendCss' => true,
-        'withMainStyle'   => true,
-    ]);
-
-    ScriptHelpers::loadApiFetch();
-}
+ScriptHelpers::loadVue([
+    'withTailwind'    => true,
+    'withSonner'      => false,
+    'withDotLottie'   => false,
+    'withConfetti'    => false,
+    'withDraggable'   => false,
+    'withFrontendCss' => true,
+    'withMainStyle'   => true,
+]);
 
 $format_money = static function (float $amount): ?string {
     if ($amount <= 0) {
@@ -183,15 +176,41 @@ foreach ($supplier_data as $sid => $data) {
     ];
 }
 
+$all_suppliers = get_users([
+    'role'    => 'supplier',
+    'orderby' => 'display_name',
+    'order'   => 'ASC',
+]);
+
+$available_suppliers = array_map(static function ($user) {
+    /** @var WP_User $user */
+    return [
+        'id'    => (int) $user->ID,
+        'name'  => $user->display_name ?: $user->user_login,
+        'email' => $user->user_email,
+    ];
+}, $all_suppliers);
+
 $initial_data = [
-    'orderId'   => $order_id,
-    'suppliers' => $suppliers,
-    'rest'      => [
+    'orderId'            => $order_id,
+    'suppliers'          => $suppliers,
+    'availableSuppliers' => $available_suppliers,
+    'rest'               => [
         'path'  => 'hc/v1/suppliers/portal/reset-fulfillment',
         'url'   => esc_url_raw(rest_url('hc/v1/suppliers/portal/reset-fulfillment')),
         'nonce' => wp_create_nonce('wp_rest'),
     ],
-    'i18n'      => [
+    'reassignRest'       => [
+        'path'  => 'hc/v1/suppliers/portal/orders/reassign-supplier',
+        'url'   => esc_url_raw(rest_url('hc/v1/suppliers/portal/orders/reassign-supplier')),
+        'nonce' => wp_create_nonce('wp_rest'),
+    ],
+    'suppliersRest'      => [
+        'path'  => 'hc/v1/suppliers/portal/orders/' . $order_id . '/suppliers',
+        'url'   => esc_url_raw(rest_url('hc/v1/suppliers/portal/orders/' . $order_id . '/suppliers')),
+        'nonce' => wp_create_nonce('wp_rest'),
+    ],
+    'i18n'               => [
         'no_supplier_data'      => esc_html__('No supplier data found for this order.', 'woocommerce'),
         'status_label'          => esc_html__('Status', 'woocommerce'),
         'reset_fulfillment'     => esc_html__('Reset Fulfillment', 'woocommerce'),
@@ -206,6 +225,12 @@ $initial_data = [
         'tracking_number'       => esc_html__('Tracking Number:', 'woocommerce'),
         'supplier_price'        => esc_html__('Supplier Price:', 'woocommerce'),
         'grand_total'           => esc_html__('Grand Total for Supplier:', 'woocommerce'),
+        'reassign_supplier'     => esc_html__('Reassign Supplier', 'woocommerce'),
+        'reassign_helper'       => esc_html__('Select another supplier to take ownership of this section.', 'woocommerce'),
+        'select_supplier'       => esc_html__('Select Supplier', 'woocommerce'),
+        'confirm_reassign'      => esc_html__('Confirm Reassign', 'woocommerce'),
+        'cancel'                => esc_html__('Cancel', 'woocommerce'),
+        'reassign_failed'       => esc_html__('Failed to reassign supplier. Please try again.', 'woocommerce'),
     ],
 ];
 
@@ -220,6 +245,26 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
 </script>
 <script>
     (function () {
+        function waitForWP(timeout = 5000, interval = 100) {
+            return new Promise((resolve, reject) => {
+                if (window.wp?.apiFetch) {
+                    resolve();
+                    return;
+                }
+
+                const start = Date.now();
+                const timer = setInterval(() => {
+                    if (window.wp?.apiFetch) {
+                        clearInterval(timer);
+                        resolve();
+                    } else if (Date.now() - start >= timeout) {
+                        clearInterval(timer);
+                        reject(new Error('wp.apiFetch not available'));
+                    }
+                }, interval);
+            });
+        }
+
         const appTarget = document.getElementById('<?php echo esc_js($app_id); ?>');
         const payloadEl = document.getElementById('<?php echo esc_js($data_id); ?>');
 
@@ -247,20 +292,110 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
                     orderId: initialData.orderId,
                     suppliers: initialData.suppliers || [],
                     rest: initialData.rest || {},
+                    reassignRest: initialData.reassignRest || null,
+                    availableSuppliers: initialData.availableSuppliers || [],
+                    suppliersRest: initialData.suppliersRest || null,
                     i18n: initialData.i18n || {},
                     loadingSupplier: null,
                     confirmDialogVisible: false,
                     confirmTarget: null,
                     errorDialogVisible: false,
                     errorMessage: '',
+                    reassignDialogVisible: false,
+                    reassignTarget: null,
+                    reassignSelection: null,
+                    reassignLoading: false,
+                    globalStore: window.globalStore || null,
                 };
             },
             computed: {
                 hasSuppliers() {
                     return Array.isArray(this.suppliers) && this.suppliers.length > 0;
                 },
+                isMobileView() {
+                    return this.globalStore ? !!this.globalStore.isMobile : false;
+                },
+                reassignOptions() {
+                    if (!Array.isArray(this.availableSuppliers)) {
+                        return [];
+                    }
+
+                    const currentId = this.reassignTarget ? this.reassignTarget.id : null;
+                    return this.availableSuppliers
+                        .filter(opt => opt && opt.id && opt.id !== currentId)
+                        .map(opt => ({
+                            id: opt.id,
+                            label: opt.email ? `${opt.name} (${opt.email})` : opt.name,
+                        }));
+                },
+            },
+            mounted() {
+                if (typeof initializeGlobalStore === 'function' && !window.globalStore) {
+                    initializeGlobalStore();
+                }
+                if (window.globalStore) {
+                    this.globalStore = window.globalStore;
+                }
             },
             methods: {
+                async sendRestRequest(config, { method = 'POST', data = null } = {}) {
+                    if (!config) {
+                        throw new Error('Missing REST configuration');
+                    }
+
+                    await waitForWP();
+
+                    if (window.wp?.apiFetch && config.path) {
+                        return wp.apiFetch({
+                            path: config.path,
+                            method,
+                            data,
+                        });
+                    }
+
+                    const headers = {
+                        'Content-Type': 'application/json',
+                    };
+
+                    if (config.nonce) {
+                        headers['X-WP-Nonce'] = config.nonce;
+                    }
+
+                    const response = await fetch(config.url, {
+                        method,
+                        headers,
+                        credentials: 'same-origin',
+                        body: method === 'GET' || method === 'HEAD' ? null : JSON.stringify(data),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Request failed');
+                    }
+
+                    return response.json();
+                },
+                async refreshSuppliers() {
+                    if (!this.suppliersRest) {
+                        return;
+                    }
+
+                    try {
+                        const response = await this.sendRestRequest(this.suppliersRest, { method: 'GET' });
+                        if (response?.suppliers) {
+                            this.suppliers = response.suppliers;
+                        }
+                    } catch (error) {
+                        console.error('Failed to refresh suppliers', error);
+                        this.errorMessage = this.i18n.reassign_failed || 'Unable to refresh supplier data.';
+                        this.errorDialogVisible = true;
+                    }
+                },
+                buttonLabel(key, fallback = '') {
+                    if (this.isMobileView) {
+                        return '';
+                    }
+                    return this.i18n[key] || fallback;
+                },
                 badgeMeta(status) {
                     switch (status) {
                         case 'fulfilled':
@@ -281,7 +416,7 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
                     this.confirmTarget = supplier;
                     this.confirmDialogVisible = true;
                 },
-                confirmReset() {
+                async confirmReset() {
                     if (!this.confirmTarget) {
                         return;
                     }
@@ -295,42 +430,18 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
                         supplier_id: supplier.id,
                     };
 
-                    const request = (window.wp && window.wp.apiFetch)
-                        ? wp.apiFetch({
-                            path: this.rest.path,
-                            method: 'POST',
-                            data: payload,
-                        })
-                        : fetch(this.rest.url, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-WP-Nonce': this.rest.nonce,
-                            },
-                            credentials: 'same-origin',
-                            body: JSON.stringify(payload),
-                        }).then((response) => {
-                            if (!response.ok) {
-                                throw new Error('Request failed');
-                            }
-
-                            return response.json();
-                        });
-
-                    request
-                        .then(() => {
-                            window.location.reload();
-                        })
-                        .catch((error) => {
-                            console.error(error);
-                            this.errorMessage = this.i18n.reset_failed || 'Action failed.';
-                            this.errorDialogVisible = true;
-                        })
-                        .finally(() => {
-                            this.loadingSupplier = null;
-                            this.confirmDialogVisible = false;
-                            this.confirmTarget = null;
-                        });
+                    try {
+                        await this.sendRestRequest(this.rest, { method: 'POST', data: payload });
+                        await this.refreshSuppliers();
+                    } catch (error) {
+                        console.error(error);
+                        this.errorMessage = this.i18n.reset_failed || 'Action failed.';
+                        this.errorDialogVisible = true;
+                    } finally {
+                        this.loadingSupplier = null;
+                        this.confirmDialogVisible = false;
+                        this.confirmTarget = null;
+                    }
                 },
                 cancelReset() {
                     this.confirmDialogVisible = false;
@@ -340,9 +451,102 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
                     this.errorDialogVisible = false;
                     this.errorMessage = '';
                 },
+                openReassign(supplier) {
+                    if (!supplier) {
+                        return;
+                    }
+
+                    if (!this.reassignRest || (!this.reassignRest.path && !this.reassignRest.url)) {
+                        this.errorMessage = this.i18n.reassign_failed || 'Reassign endpoint unavailable.';
+                        this.errorDialogVisible = true;
+                        return;
+                    }
+
+                    if (!this.reassignOptions.length) {
+                        this.errorMessage = this.i18n.reassign_failed || 'No alternate suppliers available.';
+                        this.errorDialogVisible = true;
+                        return;
+                    }
+
+                    this.reassignTarget = supplier;
+                    this.reassignSelection = null;
+                    this.reassignDialogVisible = true;
+                },
+                async confirmReassign() {
+                    if (!this.reassignTarget || !this.reassignSelection) {
+                        return;
+                    }
+
+                    const payload = {
+                        order_id: this.orderId,
+                        from_supplier_id: this.reassignTarget.id,
+                        to_supplier_id: this.reassignSelection,
+                    };
+
+                    this.reassignLoading = true;
+
+                    try {
+                        await this.sendRestRequest(this.reassignRest, { method: 'POST', data: payload });
+                        await this.refreshSuppliers();
+                    } catch (error) {
+                        console.error(error);
+                        this.errorMessage = this.i18n.reassign_failed || 'Unable to reassign supplier.';
+                        this.errorDialogVisible = true;
+                    } finally {
+                        this.reassignLoading = false;
+                        this.reassignDialogVisible = false;
+                        this.reassignTarget = null;
+                        this.reassignSelection = null;
+                    }
+                },
+                cancelReassign() {
+                    this.reassignDialogVisible = false;
+                    this.reassignTarget = null;
+                    this.reassignSelection = null;
+                },
             },
             template: `
                 <div class="space-y-4">
+                    <Dialog
+                        v-model:visible="reassignDialogVisible"
+                        modal
+                        :header="i18n.reassign_supplier || 'Reassign Supplier'"
+                        :style="{ width: '32rem' }"
+                    >
+                        <div class="space-y-4">
+                            <p class="text-sm text-slate-600 flex items-center gap-2">
+                                <i class="pi pi-exchange"></i>
+                                <span>{{ i18n.reassign_helper || 'Select a new supplier.' }}</span>
+                            </p>
+                            <Select
+                                class="w-full"
+                                v-model="reassignSelection"
+                                :options="reassignOptions"
+                                optionLabel="label"
+                                optionValue="id"
+                                :placeholder="i18n.select_supplier || 'Select supplier'"
+                                filter
+                            />
+                        </div>
+                        <template #footer>
+                            <div class="flex justify-end items-center gap-2">
+                                <Button
+                                    :label="i18n.cancel || 'Cancel'"
+                                    severity="secondary"
+                                    @click="cancelReassign"
+                                    :disabled="reassignLoading"
+                                />
+                                <Button
+                                    icon="pi pi-check"
+                                    :label="i18n.confirm_reassign || 'Confirm'"
+                                    @click="confirmReassign"
+                                    :loading="reassignLoading"
+                                    :disabled="!reassignSelection"
+                                />
+                            </div>
+                        </template>
+                    </Dialog>
+
                     <Dialog
                         v-model:visible="confirmDialogVisible"
                         modal
@@ -415,13 +619,24 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
                                     <div class="flex items-center gap-2">
                                         <Button
                                             size="small"
-                                            :label="i18n.reset_fulfillment"
+                                            :label="buttonLabel('reset_fulfillment', 'Reset Fulfillment')"
                                             icon="pi pi-refresh"
                                             severity="contrast"
-                                            outlined
+                                            rounded
                                             @click="promptReset(supplier)"
                                             :loading="loadingSupplier === supplier.id"
                                             :disabled="loadingSupplier === supplier.id"
+                                            :aria-label="i18n.reset_fulfillment || 'Reset Fulfillment'"
+                                        />
+                                        <Button
+                                            size="small"
+                                            :label="buttonLabel('reassign_supplier', 'Reassign')"
+                                            icon="pi pi-user"
+                                            rounded
+                                            @click="openReassign(supplier)"
+                                            severity="info"
+                                            outlined
+                                            :aria-label="i18n.reassign_supplier || 'Reassign Supplier'"
                                         />
                                     </div>
                                 </div>
@@ -598,6 +813,15 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
             `,
         });
 
+        const pinia = Pinia?.createPinia ? Pinia.createPinia() : null;
+        if (pinia) {
+            app.use(pinia);
+        }
+
+        if (typeof initializeGlobalStore === 'function' && !window.globalStore) {
+            initializeGlobalStore();
+        }
+
         app.use(PrimeVue.Config, {
             theme: {
                 preset: PrimeVue.Themes?.Aura || PrimeVue.Themes?.Material,
@@ -613,6 +837,7 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
         app.component('Divider', PrimeVue.Divider);
         app.component('Dialog', PrimeVue.Dialog);
         app.component('Image', PrimeVue.Image);
+        app.component('Select', PrimeVue.Select);
 
         app.mount(appTarget);
     })();

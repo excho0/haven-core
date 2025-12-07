@@ -192,6 +192,25 @@ class HC_Supplier_Service {
     }
 
     /**
+     * Remove a single order assignment from a supplier.
+     *
+     * @param int $supplier_id
+     * @param int $order_id
+     * @return bool
+     */
+    public function unassign_order( int $supplier_id, int $order_id ): bool {
+        $supplier = $this->get( $supplier_id );
+        if ( ! $supplier ) {
+            return false;
+        }
+
+        $supplier->remove_assigned_order( $order_id );
+        $supplier->save();
+
+        return true;
+    }
+
+    /**
      * Delete a supplier.
      *
      * @param int      $supplier_id

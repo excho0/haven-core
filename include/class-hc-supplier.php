@@ -288,6 +288,29 @@ class HC_Supplier extends HC_Data {
         }
     }
 
+    /**
+     * Remove a specific order ID from the assigned orders list.
+     *
+     * @param int $order_id
+     * @return void
+     */
+    public function remove_assigned_order( int $order_id ): void {
+        $order_id = (int) $order_id;
+        if ( ! $order_id ) {
+            return;
+        }
+
+        $existing = array_map( 'intval', $this->data['assigned_orders'] );
+        $filtered = array_filter(
+            $existing,
+            static function ( $value ) use ( $order_id ) {
+                return (int) $value !== $order_id;
+            }
+        );
+
+        $this->data['assigned_orders'] = array_values( $filtered );
+    }
+
 
     /**
      * Getter for custom attributes.

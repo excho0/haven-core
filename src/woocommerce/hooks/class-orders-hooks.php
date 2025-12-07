@@ -72,6 +72,7 @@ class Orders
 
         // Handle supplier assignment job (async) after it has been queued via Action Scheduler
         add_action('havencore_supplier_order_assignment', [self::class, 'handle_supplier_order_creation']);
+        add_action('havencore_supplier_order_reassignment', [self::class, 'handle_supplier_reassignment_email'], 10, 2);
 
         // Send payment link email to customer when status is manually changed to 'pending' from admin
         add_action('woocommerce_order_status_changed', [self::class, 'send_customer_payment_email_on_manual_status_change'], 10, 4);
@@ -116,6 +117,26 @@ class Orders
             self::log("⚠️ Action Scheduler not found. Falling back to wp_schedule_single_event for order $order_id", 0, $order_id);
         }
         
+    }
+
+    public static function schedule_supplier_reassignment_email(int $order_id, int $supplier_id): void
+    {
+        $order_id    = (int) $order_id;
+        $supplier_id = (int) $supplier_id;
+
+        if (!$order_id || !$supplier_id) {
+            return;
+        }
+
+        if (function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(
+                'havencore_supplier_order_reassignment',
+                [$order_id, $supplier_id],
+                'hc-assign-orders-to-suppliers'
+            );
+        } else {
+            wp_schedule_single_event(time() + 10, 'havencore_supplier_order_reassignment', [$order_id, $supplier_id]);
+        }
     }
     
     
@@ -203,6 +224,30 @@ class Orders
         delete_post_meta($order_id, '_supplier_email_action_id'); // ✅ cleanup
         self::log("✅ Supplier data marked as created for order $order_id", 0, $order_id);
     }
+
+    public static function handle_supplier_reassignment_email($order_id, $supplier_id): void
+    {
+        $order_id    = (int) $order_id;
+        $supplier_id = (int) $supplier_id;
+
+        if (!$order_id || !$supplier_id) {
+            return;
+        }
+
+        $order = wc_get_order($order_id);
+        if (!$order || !is_a($order, WC_Order::class)) {
+            return;
+        }
+
+        $supplier_data = get_post_meta($order_id, '_supplier_data', true);
+        $segment       = [];
+
+        if (is_array($supplier_data) && isset($supplier_data[$supplier_id]) && is_array($supplier_data[$supplier_id])) {
+            $segment = $supplier_data[$supplier_id];
+        }
+
+        self::send_supplier_email($order, (string) $supplier_id, $segment, 'reassignment');
+    }
     
 
 
@@ -214,10 +259,17 @@ class Orders
      * @param array $supplier_data
      * @return void
      */
-    private static function send_supplier_email(WC_Order $order, string $supplier_id, array $supplier_data): void
+    public static function send_supplier_email(WC_Order $order, string $supplier_id, array $supplier_data, string $context = 'assignment'): void
     {
         $settings = new HC_Settings();
-        if (!$settings->get('notifications.supplier_assignment_email', true)) {
+        $context_toggle_map = [
+            'assignment'   => 'notifications.supplier_assignment_email',
+            'reassignment' => 'notifications.supplier_reassignment_email',
+        ];
+
+        $toggle_key = $context_toggle_map[$context] ?? $context_toggle_map['assignment'];
+
+        if (!$settings->get($toggle_key, true)) {
             return;
         }
 
@@ -236,7 +288,9 @@ class Orders
         $fulfillment_link = esc_url(home_url('/supplier-portal')) . '#/orders?order_id=' . urlencode($order_id);
 
     
-        $subject = sprintf('New Order #%d Assigned to You', $order_id);
+        $subject = $context === 'reassignment'
+            ? sprintf('Order #%d Has Been Reassigned to You', $order_id)
+            : sprintf('New Order #%d Assigned to You', $order_id);
         $headers = ['Content-Type: text/html; charset=UTF-8'];
     
         $template_path = HAVEN_CORE_EMAIL_TEMPLATES_PATH .'supplier-fulfillment-email.php';

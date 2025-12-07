@@ -142,6 +142,12 @@ class HC_Settings {
                 'tooltip' => 'Email suppliers whenever a new order is assigned to them.',
                 'icon'    => 'pi pi-briefcase',
             ],
+            'supplier_reassignment_email' => [
+                'key'     => 'notify_supplier_reassignment_email',
+                'default' => true,
+                'tooltip' => 'Notify suppliers if an existing order gets reassigned to them.',
+                'icon'    => 'pi pi-user-edit',
+            ],
             'supplier_welcome_email' => [
                 'key'     => 'notify_supplier_welcome_email',
                 'default' => true,
