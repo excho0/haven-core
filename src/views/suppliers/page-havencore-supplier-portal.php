@@ -2373,7 +2373,6 @@
                                         />
                                         <div>
                                             <div class="font-medium">{{ data.name }}</div>
-                                            <div class="text-xs text-gray-500">{{ (i18n.id || 'ID') + ': ' + data.id }}</div>
                                         </div>
                                     </div>
                                 </template>
