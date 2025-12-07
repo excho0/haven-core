@@ -135,7 +135,20 @@ include HAVEN_CORE_EMAIL_STYLES_PATH;
                 <?php endif; ?>
                 <div>
                     <h3><?php echo esc_html($product_name); ?></h3>
-                    <p style="margin:4px 0 0;font-size:14px;color:#6b7280;">SKU: <?php echo esc_html($product_sku); ?></p>
+                    <?php
+                    $sku_changed = false;
+                    if ( ! empty( $changes ) ) {
+                        foreach ( $changes as $change_row ) {
+                            if ( isset( $change_row['field'] ) && strtolower( $change_row['field'] ) === 'sku' ) {
+                                $sku_changed = true;
+                                break;
+                            }
+                        }
+                    }
+                    if ( ! $sku_changed && $product_sku ) :
+                    ?>
+                        <p style="margin:4px 0 0;font-size:14px;color:#6b7280;">SKU: <?php echo esc_html($product_sku); ?></p>
+                    <?php endif; ?>
                 </div>
             </div>
 

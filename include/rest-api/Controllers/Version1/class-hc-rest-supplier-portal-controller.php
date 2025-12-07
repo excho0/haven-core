@@ -303,6 +303,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			'stock_quantity' => $product->get_manage_stock() ? (int) $product->get_stock_quantity() : null,
 			'stock_status'   => $product->get_stock_status(),
 			'supplier_price' => $this->normalize_supplier_price( $raw_price ),
+			'sku'            => $product->get_sku(),
 		];
 	}
 
@@ -312,6 +313,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			'stock_quantity' => 'Stock Quantity',
 			'stock_status'   => 'Stock Status',
 			'supplier_price' => 'Supplier Price',
+			'sku'            => 'SKU',
 		];
 
 		$changes = [];
@@ -337,18 +339,20 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			$value = null;
 		}
 
-		switch ( $field ) {
-			case 'manage_stock':
-				return (bool) $value;
-			case 'stock_quantity':
-				return $value === null ? null : (int) $value;
-			case 'stock_status':
-				return $value === null ? null : strtolower( (string) $value );
-			case 'supplier_price':
-				return $value === null ? null : (float) $value;
-			default:
-				return $value;
-		}
+			switch ( $field ) {
+				case 'manage_stock':
+					return (bool) $value;
+				case 'stock_quantity':
+					return $value === null ? null : (int) $value;
+				case 'stock_status':
+					return $value === null ? null : strtolower( (string) $value );
+				case 'supplier_price':
+					return $value === null ? null : (float) $value;
+				case 'sku':
+					return $value === null ? null : (string) $value;
+				default:
+					return $value;
+			}
 	}
 
 	private function format_change_value( string $field, $value ): string {
@@ -356,20 +360,22 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			return '—';
 		}
 
-		switch ( $field ) {
-			case 'manage_stock':
-				return $value ? 'Enabled' : 'Disabled';
-			case 'stock_quantity':
-				return number_format_i18n( (int) $value );
-			case 'stock_status':
-				$statuses = function_exists( 'wc_get_stock_statuses' ) ? wc_get_stock_statuses() : [];
-				$lookup = strtolower( (string) $value );
-				return $statuses[ $lookup ] ?? ucwords( $lookup );
-			case 'supplier_price':
-				return $this->format_currency_value( (float) $value );
-			default:
-				return (string) $value;
-		}
+			switch ( $field ) {
+				case 'manage_stock':
+					return $value ? 'Enabled' : 'Disabled';
+				case 'stock_quantity':
+					return number_format_i18n( (int) $value );
+				case 'stock_status':
+					$statuses = function_exists( 'wc_get_stock_statuses' ) ? wc_get_stock_statuses() : [];
+					$lookup = strtolower( (string) $value );
+					return $statuses[ $lookup ] ?? ucwords( $lookup );
+				case 'supplier_price':
+					return $this->format_currency_value( (float) $value );
+				case 'sku':
+					return (string) $value;
+				default:
+					return (string) $value;
+			}
 	}
 
 	private function normalize_supplier_price( $value ) {
