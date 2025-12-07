@@ -26,9 +26,12 @@ return array(
     'HavenCore\\RestApi\\Server' => $baseDir . '/include/rest-api/Server.php',
     'HavenCore\\RestApi\\Utilities\\SingletonTrait' => $baseDir . '/include/rest-api/Utilities/SingletonTrait.php',
     'HavenCore\\Services\\EmailVerificationService' => $baseDir . '/include/Services/EmailVerificationService.php',
+    'HavenCore\\Services\\HC_Database_Schema' => $baseDir . '/include/Services/class-hc-database-schema.php',
+    'HavenCore\\Services\\HC_Messaging_Service' => $baseDir . '/include/Services/class-hc-messaging-service.php',
     'HavenCore\\Services\\HC_Supplier_Service' => $baseDir . '/include/Services/class-hc-supplier-service.php',
     'HavenCore\\Utils\\ArrayHelpers' => $baseDir . '/include/Utils/class-array-helpers.php',
     'HavenCore\\Utils\\PageUtils' => $baseDir . '/include/Utils/class-page-manager.php',
     'HavenCore\\Utils\\ScriptHelpers' => $baseDir . '/include/Utils/class-script-helpers.php',
     'HavenCore\\Utils\\UserUtils' => $baseDir . '/include/Utils/class-user-utils.php',
+    'Normalizer' => $vendorDir . '/symfony/polyfill-intl-normalizer/Resources/stubs/Normalizer.php',
 );

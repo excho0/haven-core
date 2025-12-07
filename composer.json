@@ -16,5 +16,13 @@
             "name": "excho0",
             "email": "[redacted]"
         }
-    ]
+    ],
+    "require": {},
+    "require-dev": {
+        "robmorgan/phinx": "^0.16.10"
+    },
+    "scripts": {
+        "migrate": "vendor/bin/phinx migrate -c phinx.php",
+        "migrate:rollback": "vendor/bin/phinx rollback -c phinx.php -t 0"
+    }
 }
