@@ -14,6 +14,22 @@ if (!defined('PLUGIN_NAME')) {
     define('PLUGIN_NAME', 'HavenCore');
 }
 
+if (!defined('HAVEN_CORE_VERSION')) {
+    if (!function_exists('get_file_data')) {
+        require_once ABSPATH . 'wp-includes/functions.php';
+    }
+
+    $plugin_data = function_exists('get_file_data')
+        ? get_file_data(__FILE__, ['Version' => 'Version'], false)
+        : null;
+
+    $version = is_array($plugin_data) && !empty($plugin_data['Version'])
+        ? $plugin_data['Version']
+        : '0.0.0';
+
+    define('HAVEN_CORE_VERSION', $version);
+}
+
 
 // ================================
 // Composer Autoloader

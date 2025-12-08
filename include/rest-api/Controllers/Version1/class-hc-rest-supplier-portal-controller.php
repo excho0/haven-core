@@ -147,6 +147,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				'permission_callback' => [ $this, 'permissions_check' ],
 			]
 		);
+
 	}
 
 	public function get_supplier_product_variations( WP_REST_Request $request ) {
@@ -312,6 +313,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 	protected function current_user_is_supplier_or_admin(): bool {
 		return is_user_logged_in() && ( wc_current_user_has_role( 'supplier' ) || wc_current_user_has_role( 'administrator' ) );
 	}
+
 
 	public function permissions_check( $request ) {
 		return $this->current_user_is_supplier_or_admin();

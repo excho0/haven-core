@@ -10,7 +10,9 @@ function initializeGlobalStore() {
     const useGlobalStore = Pinia.defineStore('global', {
         state: () => ({
             isRtl: false,
-            isMobile: false
+            isMobile: false,
+            isTablet: false,
+            breakpoint: 'desktop'
         }),
         actions: {
             setRtl(value) {
@@ -21,6 +23,15 @@ function initializeGlobalStore() {
             },
             setMobile(value) {
                 this.isMobile = value;
+            },
+            setTablet(value) {
+                this.isTablet = value;
+            },
+            setBreakpoint(value) {
+                if (this.breakpoint !== value) {
+                    this.breakpoint = value;
+                    document.documentElement.setAttribute('data-bp', value);
+                }
             }
         }
     });
@@ -35,13 +46,28 @@ function initializeGlobalStore() {
         globalStore.setRtl(isRtl);  // Set the initial RTL value
 
         // Detect mobile view by checking window width
-        function detectMobile() {
-            globalStore.setMobile(window.innerWidth <= 768);
+        function detectBreakpoint() {
+            const width = window.innerWidth;
+            let breakpoint = 'desktop';
+            let isMobile = false;
+            let isTablet = false;
+
+            if (width <= 640) {
+                breakpoint = 'mobile';
+                isMobile = true;
+            } else if (width <= 1024) {
+                breakpoint = 'tablet';
+                isTablet = true;
+            }
+
+            globalStore.setMobile(isMobile);
+            globalStore.setTablet(isTablet);
+            globalStore.setBreakpoint(breakpoint);
         }
 
         // Run mobile detection and update state on resize
-        detectMobile();
-        window.addEventListener('resize', detectMobile);
+        detectBreakpoint();
+        window.addEventListener('resize', detectBreakpoint);
 
         // RTL Mutation Observer: Detect changes to the 'dir' attribute only on the <html> tag
         const observer = new MutationObserver(() => {

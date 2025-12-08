@@ -124,8 +124,11 @@ hc_ensure_user_functions_loaded();
 
 
 use HavenCore\Classes\HC_Settings;
+use HavenCore\Services\HC_Database_Schema;
 
 $settings = new HC_Settings();
+
+add_action('plugins_loaded', [HC_Database_Schema::class, 'maybeUpdate'], 5);
 
 // Load WooCommerce-related integrations
 require_once HAVEN_CORE_PATH . 'woocommerce/index.php';

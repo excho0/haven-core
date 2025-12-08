@@ -31,7 +31,9 @@ class HC_Data_Store {
      * @var array
      */
     private $stores = array(
-        'supplier' => \HavenCore\DataStores\HC_Supplier_Data_Store::class,
+        'supplier'     => \HavenCore\DataStores\HC_Supplier_Data_Store::class,
+        'conversation' => \HavenCore\DataStores\HC_Conversation_Data_Store::class,
+        'message'      => \HavenCore\DataStores\HC_Message_Data_Store::class,
     );
 
     /**

@@ -4,6 +4,7 @@ namespace HavenCore\Lifecycle;
 
 use HavenCore\Classes\HC_Settings;
 use HavenCore\Utils\PageUtils;
+use HavenCore\Services\HC_Database_Schema;
 
 
 /**
@@ -41,6 +42,7 @@ class LifecycleManager
         PageUtils::createPageIfNotExists('Place Order', 'place-order');
         PageUtils::createPageIfNotExists('Account Security', HAVEN_CORE_PASSWORD_RESET_SLUG);
 
+        HC_Database_Schema::install();
 
         // Re-publish pages if they exist but were previously set to draft
         PageUtils::setPageStatus('goodbye', 'publish');
@@ -100,6 +102,7 @@ class LifecycleManager
         PageUtils::deletePageIfExists('place-order');
         PageUtils::deletePageIfExists(HAVEN_CORE_PASSWORD_RESET_SLUG);
 
+        HC_Database_Schema::uninstall();
     }
 
     /**

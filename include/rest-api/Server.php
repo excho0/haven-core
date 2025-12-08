@@ -54,6 +54,9 @@ class Server {
 					\HavenCore\RestApi\Controllers\V1\HC_REST_Account_V1_Controller::class,
 					// Add other controller classes here...
 				),
+				'hc/v1/communications' => array(
+					\HavenCore\RestApi\Controllers\V1\HC_REST_Supplier_Messaging_V1_Controller::class,
+				),
 			)
 		);
 	}
