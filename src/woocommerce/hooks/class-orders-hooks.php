@@ -185,7 +185,8 @@ class Orders
             if ($supplier_id) {
                 if (!isset($suppliers[$supplier_id])) {
                     $suppliers[$supplier_id] = [
-                        'ungrouped_products' => []
+                        'ungrouped_products'     => [],
+                        'tracking_groups_meta'   => [],
                     ];
                 }
 

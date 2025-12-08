@@ -569,10 +569,16 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 
 		// Grouped products
 		$grouped_products = [];
+		$tracking_meta = [];
 		if ( ! empty( $metadata['grouped_products'] ) ) {
 			foreach ( $metadata['grouped_products'] as $group ) {
 				$tracking = sanitize_text_field( $group['tracking_number'] ?? '' );
 				if ( empty( $tracking ) ) continue;
+
+				$tracking_meta[ $tracking ] = [
+					'carrier_code'       => sanitize_text_field( $group['carrier_code'] ?? '' ),
+					'carrier_name_other' => sanitize_text_field( $group['carrier_name_other'] ?? '' ),
+				];
 
 				if ( ! isset( $grouped_products[ $tracking ] ) ) {
 					$grouped_products[ $tracking ] = [];
@@ -591,18 +597,22 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 
 		$supplier_data[ $supplier_id ]['ungrouped_products'] = $ungrouped_products;
 		$supplier_data[ $supplier_id ]['grouped_products']   = $grouped_products;
+		$supplier_data[ $supplier_id ]['tracking_groups_meta'] = $tracking_meta;
 		$supplier_data[ $supplier_id ]['date_modified'] = current_time('Y-m-d\TH:i:s\Z'); // e.g. '2025-06-21T20:45:00Z'
 
 		// Fulfillment status
-		$total     = count( $ungrouped_products );
-		$fulfilled = 0;
+		$current_status = $supplier_data[ $supplier_id ]['fulfillment_status'] ?? 'pending';
+		$total          = count( $ungrouped_products );
+		$fulfilled      = 0;
 
 		foreach ( $grouped_products as $tracking => $products ) {
 			$total     += count( $products );
 			$fulfilled += count( $products );
 		}
 
-		if ( $fulfilled === $total && $total > 0 ) {
+		if ( 'fulfilled' === $current_status ) {
+			$supplier_data[ $supplier_id ]['fulfillment_status'] = 'fulfilled';
+		} elseif ( $fulfilled === $total && $total > 0 ) {
 			$supplier_data[ $supplier_id ]['fulfillment_status'] = 'ready-to-fulfill';
 		} elseif ( $fulfilled > 0 ) {
 			$supplier_data[ $supplier_id ]['fulfillment_status'] = 'partially-fulfilled';
@@ -617,6 +627,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			'status'             => $supplier_data[ $supplier_id ]['fulfillment_status'],
 			'ungrouped_products' => $ungrouped_products,
 			'grouped_products'   => $grouped_products,
+			'tracking_meta'      => $tracking_meta,
 		] );
 	}
 
@@ -638,6 +649,8 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		if ( empty( $supplier_data[ $supplier_id ] ) ) {
 			return new WP_Error( 'supplier_data_missing', 'No supplier data found.', [ 'status' => 404 ] );
 		}
+
+		$settings = new HC_Settings();
 
 		$supplier_data[ $supplier_id ]['fulfillment_status'] = 'fulfilled';
 		update_post_meta( $order_id, '_supplier_data', $supplier_data );
@@ -668,6 +681,10 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			}
 		}
 
+		if ( $settings->get( 'integrations.paypal.auto_tracking', false ) ) {
+			$this->maybe_sync_paypal_tracking_with_paypal( $order, $supplier_data[ $supplier_id ] );
+		}
+
 		// Optional: Send email
 		$customer_email = $order->get_billing_email();
 		$customer_name  = $order->get_billing_first_name();
@@ -675,8 +692,6 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		ob_start();
 		include HAVEN_CORE_EMAIL_TEMPLATES_PATH . 'customer-tracking-update-email.php';
 		$email_body = ob_get_clean();
-
-		$settings = new HC_Settings();
 
 		if (
 			$settings->get( 'notifications.customer_tracking_emails', true ) &&
@@ -739,6 +754,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 
         $supplier_data[ $supplier_id ]['ungrouped_products'] = $rebuilt_ungrouped;
         $supplier_data[ $supplier_id ]['grouped_products']   = [];
+        $supplier_data[ $supplier_id ]['tracking_groups_meta'] = [];
         $supplier_data[ $supplier_id ]['fulfillment_status'] = 'pending';
         $supplier_data[ $supplier_id ]['date_modified']      = current_time('Y-m-d\TH:i:s\Z');
 
@@ -772,6 +788,153 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		return new WP_REST_Response( [
 			'suppliers' => $cards,
 		], 200 );
+	}
+
+	private function maybe_sync_paypal_tracking_with_paypal( \WC_Order $order, array $supplier_entry ): void {
+		if ( empty( $supplier_entry['grouped_products'] ) ) {
+			return;
+		}
+
+		if ( ! class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) || ! function_exists( '\WooCommerce\PayPalCommerce\Api\ppcp_get_paypal_order' ) ) {
+			return;
+		}
+
+		try {
+			$container        = \WooCommerce\PayPalCommerce\PPCP::container();
+			$endpoint         = $container->get( 'order-tracking.endpoint.controller' );
+			$shipment_factory = $container->get( 'order-tracking.shipment.factory' );
+		} catch ( \Throwable $e ) {
+			$this->log_paypal_tracking_error( sprintf( 'Failed to bootstrap PayPal tracking services for order #%d: %s', $order->get_id(), $e->getMessage() ) );
+			return;
+		}
+
+		if ( ! $endpoint || ! $shipment_factory ) {
+			return;
+		}
+
+		try {
+			$paypal_order = \WooCommerce\PayPalCommerce\Api\ppcp_get_paypal_order( $order );
+			$capture_id   = $endpoint->get_paypal_order_transaction_id( $paypal_order );
+		} catch ( \Throwable $e ) {
+			$this->log_paypal_tracking_error( sprintf( 'Unable to derive PayPal capture for order #%d: %s', $order->get_id(), $e->getMessage() ) );
+			return;
+		}
+
+		if ( empty( $capture_id ) ) {
+			return;
+		}
+
+		$item_map      = $this->map_order_items_for_tracking( $order );
+		$tracking_meta = $supplier_entry['tracking_groups_meta'] ?? [];
+
+		$this->log_paypal_tracking_message( sprintf( 'Attempting PayPal tracking sync for order #%d (%d tracking groups).', $order->get_id(), count( (array) $supplier_entry['grouped_products'] ) ), 'info' );
+
+		foreach ( (array) $supplier_entry['grouped_products'] as $tracking_number => $products ) {
+			$tracking_number = trim( (string) $tracking_number );
+			if ( '' === $tracking_number ) {
+				continue;
+			}
+
+			$meta             = $tracking_meta[ $tracking_number ] ?? [];
+			$carrier_code     = strtoupper( $meta['carrier_code'] ?? 'OTHER' );
+			$carrier_friendly = 'OTHER' === $carrier_code ? ( $meta['carrier_name_other'] ?? '' ) : '';
+
+			$current_products = isset( $products['products'] ) && is_array( $products['products'] )
+				? $products['products']
+				: $products;
+
+			$line_items = $this->resolve_line_items_for_tracking_group( (array) $current_products, $item_map );
+
+			try {
+				$shipment  = $shipment_factory->create_shipment(
+					$order->get_id(),
+					$capture_id,
+					$tracking_number,
+					'SHIPPED',
+					$carrier_code,
+					$carrier_friendly,
+					$line_items
+				);
+				$existing = $endpoint->get_tracking_information( $order->get_id(), $tracking_number );
+
+				if ( $existing ) {
+					$endpoint->update_tracking_information( $shipment, $order->get_id() );
+				} else {
+					$endpoint->add_tracking_information( $shipment, $order->get_id() );
+				}
+
+				$this->log_paypal_tracking_message(
+					sprintf(
+						'PayPal tracking sync OK for order #%1$d (tracking %2$s, carrier %3$s, items %4$s).',
+						$order->get_id(),
+						$tracking_number,
+						$carrier_code,
+						implode( ',', $line_items )
+					),
+					'info'
+				);
+			} catch ( \Throwable $e ) {
+				$this->log_paypal_tracking_error( sprintf( 'PayPal tracking sync failed for order #%1$d (tracking %2$s): %3$s', $order->get_id(), $tracking_number, $e->getMessage() ) );
+			}
+		}
+	}
+
+	private function map_order_items_for_tracking( \WC_Order $order ): array {
+		$map = [];
+
+		foreach ( $order->get_items() as $item_id => $item ) {
+			if ( ! ( $item instanceof \WC_Order_Item_Product ) ) {
+				continue;
+			}
+
+			$product_ids = [
+				(int) $item->get_product_id(),
+				(int) $item->get_variation_id(),
+			];
+
+			foreach ( array_filter( $product_ids ) as $product_id ) {
+				if ( ! isset( $map[ $product_id ] ) ) {
+					$map[ $product_id ] = [];
+				}
+				$map[ $product_id ][] = (int) $item_id;
+			}
+		}
+
+		return $map;
+	}
+
+	private function resolve_line_items_for_tracking_group( array $products, array $item_map ): array {
+		if ( isset( $products['products'] ) && is_array( $products['products'] ) ) {
+			$products = $products['products'];
+		}
+
+		$line_items = [];
+
+		foreach ( array_keys( $products ) as $product_id ) {
+			$pid = (int) $product_id;
+			if ( isset( $item_map[ $pid ] ) ) {
+				$line_items = array_merge( $line_items, $item_map[ $pid ] );
+			}
+		}
+
+		return array_values( array_unique( array_map( 'intval', $line_items ) ) );
+	}
+
+	private function log_paypal_tracking_message( string $message, string $level = 'warning' ): void {
+		if ( function_exists( 'wc_get_logger' ) ) {
+			$logger = wc_get_logger();
+			if ( method_exists( $logger, $level ) ) {
+				$logger->{$level}( $message, [ 'source' => 'havencore-paypal-tracking' ] );
+			} else {
+				$logger->log( $level, $message, [ 'source' => 'havencore-paypal-tracking' ] );
+			}
+		} else {
+			error_log( $message );
+		}
+	}
+
+	private function log_paypal_tracking_error( string $message ): void {
+		$this->log_paypal_tracking_message( $message, 'warning' );
 	}
 
 	public function get_assigned_orders( WP_REST_Request $request ) {
@@ -890,6 +1053,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 
 			$data = get_post_meta( $order_id, '_supplier_data', true );
 			$supplier_status = $data[ $supplier_id ]['fulfillment_status'] ?? 'pending';
+			$tracking_meta = $data[ $supplier_id ]['tracking_groups_meta'] ?? [];
 
 			// Calculate supplier earnings total for this order using supplier_price meta
 			$supplier_total = 0.0;
@@ -960,7 +1124,12 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			$grouped = [];
 			foreach ( $data[ $supplier_id ]['grouped_products'] ?? [] as $tracking => $products ) {
 				$list = [];
-				foreach ( $products as $pid => $info ) {
+				$current_products = $products;
+				if ( isset( $products['products'] ) ) {
+					$current_products = $products['products'];
+				}
+
+				foreach ( $current_products as $pid => $info ) {
 					$pid = (int) $pid;
 					if ( ! $pid ) { continue; }
 					$product = wc_get_product( $pid );
@@ -981,9 +1150,12 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 						'thumbnail' => $product ? get_the_post_thumbnail_url( $pid, 'thumbnail' ) : null
 					];
 				}
+				$meta = $tracking_meta[ (string) $tracking ] ?? [];
 				$grouped[] = [
-					'tracking_number' => $tracking,
-					'products' => $list
+					'tracking_number'     => $tracking,
+					'carrier_code'        => $meta['carrier_code'] ?? '',
+					'carrier_name_other'  => $meta['carrier_name_other'] ?? '',
+					'products'            => $list
 				];
 			}
 
@@ -1003,6 +1175,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				'currency_symbol' => get_woocommerce_currency_symbol(),
 				'ungrouped_products' => $ungrouped,
 				'grouped_products' => $grouped,
+				'tracking_groups_meta' => $tracking_meta,
 				'customer' => [
 					'id' => $order->get_customer_id(),
 					'first_name' => $order->get_billing_first_name(),

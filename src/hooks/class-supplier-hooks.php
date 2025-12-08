@@ -452,7 +452,9 @@ class SupplierHooks
                         }
 
                         unset($updated_supplier_data[$supplier_id]['grouped_products'][$group_index]);
-                        $updated_supplier_data[$supplier_id]['grouped_products'] = array_values($updated_supplier_data[$supplier_id]['grouped_products']);
+                        if (isset($updated_supplier_data[$supplier_id]['tracking_groups_meta'][$group_tracking_number])) {
+                            unset($updated_supplier_data[$supplier_id]['tracking_groups_meta'][$group_tracking_number]);
+                        }
 
                         $tracking_number_deleted = true;
                         // error_log("✅ Group removed. Products moved to ungrouped. Updated supplier data prepared.");

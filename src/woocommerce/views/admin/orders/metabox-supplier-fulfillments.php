@@ -2,6 +2,7 @@
 
 use HavenCore\Services\HC_Supplier_Service;
 use HavenCore\Utils\ScriptHelpers;
+use HavenCore\Utils\Tracking_Carriers;
 
 /** @var WP_Post|WC_Order $post */
 
@@ -14,6 +15,7 @@ if ($post instanceof WC_Order) {
 }
 
 $supplier_data = get_post_meta($order_id, '_supplier_data', true) ?: [];
+$tracking_carriers = Tracking_Carriers::get_carrier_groups();
 
 ScriptHelpers::loadVue([
     'withTailwind'    => true,
@@ -44,7 +46,8 @@ $format_product = static function (int $product_id, int $qty) use ($order, $form
     if ($order) {
         foreach ($order->get_items() as $item) {
             if ($item instanceof WC_Order_Item_Product && (int) $item->get_product_id() === $product_id) {
-                $product_name = esc_html($item->get_name());
+                $decoded_name = html_entity_decode($item->get_name(), ENT_QUOTES, get_bloginfo('charset'));
+                $product_name = sanitize_text_field(wp_strip_all_tags($decoded_name));
 
                 if ($item->get_variation_id()) {
                     $meta_data = $item->get_meta_data();
@@ -52,8 +55,11 @@ $format_product = static function (int $product_id, int $qty) use ($order, $form
 
                     foreach ($meta_data as $meta) {
                         if (strpos($meta->key, 'attribute_') === 0) {
-                            $label = wc_attribute_label(str_replace('attribute_', '', $meta->key));
-                            $variation_parts[] = $label . ': ' . esc_html($meta->value);
+                            $label = sanitize_text_field(wp_strip_all_tags(wc_attribute_label(str_replace('attribute_', '', $meta->key))));
+                            $value = sanitize_text_field(wp_strip_all_tags($meta->value));
+                            if ($label && $value) {
+                                $variation_parts[] = sprintf('%s: %s', $label, $value);
+                            }
                         }
                     }
 
@@ -130,6 +136,8 @@ foreach ($supplier_data as $sid => $data) {
         }
     }
 
+    $tracking_meta = $data['tracking_groups_meta'] ?? [];
+
     if (!empty($data['grouped_products'])) {
         foreach ($data['grouped_products'] as $tracking_number => $products) {
             $group_products = [];
@@ -151,6 +159,8 @@ foreach ($supplier_data as $sid => $data) {
 
             $grouped[] = [
                 'tracking_number' => $tracking_number,
+                'carrier_code'    => $tracking_meta[$tracking_number]['carrier_code'] ?? '',
+                'carrier_name'    => $tracking_meta[$tracking_number]['carrier_name_other'] ?? '',
                 'products'        => $group_products,
             ];
         }
@@ -195,6 +205,7 @@ $initial_data = [
     'orderId'            => $order_id,
     'suppliers'          => $suppliers,
     'availableSuppliers' => $available_suppliers,
+    'trackingCarriers'   => $tracking_carriers,
     'rest'               => [
         'path'  => 'hc/v1/suppliers/portal/reset-fulfillment',
         'url'   => esc_url_raw(rest_url('hc/v1/suppliers/portal/reset-fulfillment')),
@@ -223,6 +234,8 @@ $initial_data = [
         'close_button'          => esc_html__('Close', 'woocommerce'),
         'ungrouped_products'    => esc_html__('Ungrouped Products', 'woocommerce'),
         'tracking_number'       => esc_html__('Tracking Number:', 'woocommerce'),
+        'carrier'               => esc_html__('Carrier', 'woocommerce'),
+        'carrier_other'         => esc_html__('Carrier Name', 'woocommerce'),
         'supplier_price'        => esc_html__('Supplier Price:', 'woocommerce'),
         'grand_total'           => esc_html__('Grand Total for Supplier:', 'woocommerce'),
         'reassign_supplier'     => esc_html__('Reassign Supplier', 'woocommerce'),
@@ -295,6 +308,7 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
                     reassignRest: initialData.reassignRest || null,
                     availableSuppliers: initialData.availableSuppliers || [],
                     suppliersRest: initialData.suppliersRest || null,
+                    carrierGroups: initialData.trackingCarriers || {},
                     i18n: initialData.i18n || {},
                     loadingSupplier: null,
                     confirmDialogVisible: false,
@@ -314,6 +328,20 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
                 },
                 isMobileView() {
                     return this.globalStore ? !!this.globalStore.isMobile : false;
+                },
+                carrierLabelMap() {
+                    const map = {};
+                    const groups = this.carrierGroups || {};
+                    Object.entries(groups).forEach(([key, group]) => {
+                        const groupName = group?.name || key;
+                        Object.entries(group?.items || {}).forEach(([code, label]) => {
+                            map[code] = {
+                                label,
+                                group: groupName
+                            };
+                        });
+                    });
+                    return map;
                 },
                 reassignOptions() {
                     if (!Array.isArray(this.availableSuppliers)) {
@@ -338,6 +366,26 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
                 }
             },
             methods: {
+                carrierLabel(code) {
+                    if (!code) {
+                        return '';
+                    }
+                    const entry = this.carrierLabelMap[code];
+                    return entry ? entry.label : '';
+                },
+                formatCarrierDisplay(group) {
+                    if (!group || !group.carrier_code) {
+                        return '';
+                    }
+                    if (group.carrier_code === 'OTHER') {
+                        return group.carrier_name || this.i18n.carrier_other || 'Other';
+                    }
+                    const entry = this.carrierLabelMap[group.carrier_code];
+                    if (entry) {
+                        return entry.group ? `${entry.group} • ${entry.label}` : entry.label;
+                    }
+                    return group.carrier_name || group.carrier_code;
+                },
                 async sendRestRequest(config, { method = 'POST', data = null } = {}) {
                     if (!config) {
                         throw new Error('Missing REST configuration');
@@ -716,20 +764,46 @@ $data_id = 'hc-supplier-fulfillment-data-' . $order_id;
                                         >
                                             <Card class="border border-slate-200 rounded-xl shadow-lg">
                                                 <template #title>
-                                                    <div class="flex flex-wrap items-center gap-2">
-                                                        <i class="pi pi-barcode text-slate-400"></i>
-                                                        <span class="text-sm font-semibold text-slate-700">{{ i18n.tracking_number }}</span>
-                                                        <Tag
-                                                            v-if="group.tracking_number"
-                                                            :value="group.tracking_number"
-                                                            severity="info"
-                                                        />
-                                                        <Tag
-                                                            v-else
-                                                            value="—"
-                                                            severity="contrast"
-                                                        />
+                                                    <div class="flex flex-row ">
+                                                        <div class="flex flex-row items-center gap-2">
+                                                            <i class="pi pi-barcode text-slate-400"></i>
+
+                                                            <span class="text-sm font-semibold text-slate-700">
+                                                                {{ i18n.tracking_number }}
+                                                            </span>
+
+                                                            <Tag
+                                                                v-if="group.tracking_number"
+                                                                :value="group.tracking_number"
+                                                                severity="info"
+                                                            />
+                                                            <Tag
+                                                                v-else
+                                                                value="—"
+                                                                severity="contrast"
+                                                            />
+                                                        </div>
+
+                                                        <Divider layout="vertical" class="my-1" />
+
+                                                        <div
+                                                            class="flex text-sm items-center gap-2"
+                                                            v-if="formatCarrierDisplay(group)"
+                                                        >
+                                                            <i class="pi pi-truck text-sm" style="font-size: 1.2rem;" />
+
+                                                            <span class="font-semibold text-slate-700">
+                                                                {{ i18n.carrier }}:
+                                                            </span>
+
+                                                            <Tag
+                                                                :value="formatCarrierDisplay(group)"
+                                                                severity="contrast"
+                                                            />
+                                                        </div>
                                                     </div>
+
+                                                    <Divider />
                                                 </template>
                                                 <template #content>
                                                     <div class="flex flex-col w-full gap-4">

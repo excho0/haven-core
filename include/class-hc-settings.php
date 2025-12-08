@@ -18,12 +18,54 @@ class HC_Settings {
      */
     private $settings = [];
 
+    private static bool $paypalIntegrationInjected = false;
+
     /**
      * Constructor — optionally preload settings.
      */
     public function __construct($autoload = true) {
+        self::ensure_dynamic_schema();
+
         if ($autoload) {
             $this->load();
+        }
+    }
+
+    private static function ensure_dynamic_schema(): void {
+        if ( self::$paypalIntegrationInjected ) {
+            return;
+        }
+
+        // Ensure we have WordPress plugin helper available (outside wp-admin it might not be loaded).
+        if ( ! function_exists( 'is_plugin_active' ) ) {
+            $plugins_include = ABSPATH . 'wp-admin/includes/plugin.php';
+            if ( file_exists( $plugins_include ) ) {
+                include_once $plugins_include;
+            }
+        }
+
+        if (
+            function_exists( 'is_plugin_active' ) &&
+            is_plugin_active( 'woocommerce-paypal-payments/woocommerce-paypal-payments.php' ) &&
+            class_exists( '\WooCommerce\PayPalCommerce\PPCP' )
+        ) {
+            if ( ! isset( self::$settingSchema['integrations'] ) ) {
+                self::$settingSchema['integrations'] = [
+                    'icon' => 'pi pi-sitemap',
+                ];
+            }
+
+            self::$settingSchema['integrations']['paypal'] = [
+                'icon' => 'pi pi-paypal',
+                'auto_tracking' => [
+                    'key'     => 'auto_paypal_tracking',
+                    'default' => true,
+                    'tooltip' => 'Automatically sync supplier tracking updates with PayPal when fulfillments are confirmed.',
+                    'icon'    => 'pi pi-send',
+                ],
+            ];
+
+            self::$paypalIntegrationInjected = true;
         }
     }
 
@@ -62,30 +104,9 @@ class HC_Settings {
                 'icon'    => 'pi pi-shield',
             ],
         ],
-        // 'integrations' => [
-        //     'icon' => 'pi pi-sitemap',
-        //     'paypal' => [
-        //         'icon' => 'pi pi-paypal',
-        //         'client_id' => [
-        //             'key'     => 'client_id',
-        //             'default' => '',
-        //             'tooltip' => 'Your PayPal client ID for API authentication.',
-        //             'icon'    => 'pi pi-key',
-        //         ],
-        //         'client_secret' => [
-        //             'key'     => 'client_secret',
-        //             'default' => '',
-        //             'tooltip' => 'The secret key associated with your PayPal client.',
-        //             'icon'    => 'pi pi-lock',
-        //         ],
-        //         'sandbox' => [
-        //             'key'     => 'sandbox',
-        //             'default' => true,
-        //             'tooltip' => 'Enable sandbox mode for PayPal (used for testing).',
-        //             'icon'    => 'pi pi-box',
-        //         ],
-        //     ],
-        // ],
+        'integrations' => [
+            'icon' => 'pi pi-sitemap',
+        ],
         'WooCommerce' => [
             'icon' => 'pi pi-shopping-cart',
 

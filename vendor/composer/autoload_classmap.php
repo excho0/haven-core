@@ -37,6 +37,7 @@ return array(
     'HavenCore\\Utils\\ArrayHelpers' => $baseDir . '/include/Utils/class-array-helpers.php',
     'HavenCore\\Utils\\PageUtils' => $baseDir . '/include/Utils/class-page-manager.php',
     'HavenCore\\Utils\\ScriptHelpers' => $baseDir . '/include/Utils/class-script-helpers.php',
+    'HavenCore\\Utils\\Tracking_Carriers' => $baseDir . '/include/Utils/class-tracking-carriers.php',
     'HavenCore\\Utils\\UserUtils' => $baseDir . '/include/Utils/class-user-utils.php',
     'Normalizer' => $vendorDir . '/symfony/polyfill-intl-normalizer/Resources/stubs/Normalizer.php',
 );

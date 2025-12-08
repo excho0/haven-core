@@ -175,6 +175,7 @@ class ComposerStaticInit972534498555f05e711839f1d249262f
         'HavenCore\\Utils\\ArrayHelpers' => __DIR__ . '/../..' . '/include/Utils/class-array-helpers.php',
         'HavenCore\\Utils\\PageUtils' => __DIR__ . '/../..' . '/include/Utils/class-page-manager.php',
         'HavenCore\\Utils\\ScriptHelpers' => __DIR__ . '/../..' . '/include/Utils/class-script-helpers.php',
+        'HavenCore\\Utils\\Tracking_Carriers' => __DIR__ . '/../..' . '/include/Utils/class-tracking-carriers.php',
         'HavenCore\\Utils\\UserUtils' => __DIR__ . '/../..' . '/include/Utils/class-user-utils.php',
         'Normalizer' => __DIR__ . '/..' . '/symfony/polyfill-intl-normalizer/Resources/stubs/Normalizer.php',
     );

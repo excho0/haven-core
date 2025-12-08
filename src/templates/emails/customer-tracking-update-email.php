@@ -40,7 +40,11 @@ if (!empty($supplier_data)) {
                 foreach ($products as $product_id => $product_data) {
                     foreach ($order->get_items() as $item) {
                         if ($item instanceof WC_Order_Item_Product && $item->get_product_id() == $product_id) {
-                            $product_name = $item->get_name();
+                            $product_name = sanitize_text_field(
+                                wp_strip_all_tags(
+                                    html_entity_decode($item->get_name(), ENT_QUOTES, get_bloginfo('charset'))
+                                )
+                            );
                             $product_quantity = $item->get_quantity();
                             $product_image = get_the_post_thumbnail_url($product_id, 'thumbnail');
                             $product_link = get_permalink($product_id);
@@ -67,7 +71,11 @@ if (!empty($supplier_data)) {
                 $product_id = $product['product_id'];
                 foreach ($order->get_items() as $item) {
                     if ($item instanceof WC_Order_Item_Product && $item->get_product_id() == $product_id) {
-                        $product_name = $item->get_name();
+                        $product_name = sanitize_text_field(
+                            wp_strip_all_tags(
+                                html_entity_decode($item->get_name(), ENT_QUOTES, get_bloginfo('charset'))
+                            )
+                        );
                         $product_quantity = $item->get_quantity();
                         $product_image = get_the_post_thumbnail_url($product_id, 'thumbnail');
                         $product_link = get_permalink($product_id);

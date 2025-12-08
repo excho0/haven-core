@@ -6,6 +6,7 @@
     }
 
     use HavenCore\Utils\ScriptHelpers;
+    use HavenCore\Utils\Tracking_Carriers;
 
     ScriptHelpers::loadApiFetch(); // ✅ Injects wp-api-fetch and nonce safely
 
@@ -27,6 +28,8 @@
     ob_start();
     language_attributes();  // This function prints the 'lang' and 'dir' attributes
     $locale_attributes = ob_get_clean();  // Capture the output
+
+    $tracking_carriers = Tracking_Carriers::get_carrier_groups();
 
     // Handle POST from the "Continue Anyway" form
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_continue'])) {
@@ -182,6 +185,7 @@
 
         <script type="application/json" id="app-initial-data">
             <?= json_encode([
+                'trackingCarriers' => $tracking_carriers,
                 'i18n' => [
 
                     // ─── General UI ───────────────────────────────
@@ -259,6 +263,11 @@
                     'tracking_exists_detail'        => __('This tracking number already exists.', HAVEN_CORE_TEXT_DOMAIN),
                     'tracking_exists_title'         => __('Tracking Exists', HAVEN_CORE_TEXT_DOMAIN),
                     'tracking_number'               => __('Tracking Number', HAVEN_CORE_TEXT_DOMAIN),
+                    'carrier'                       => __('Carrier', HAVEN_CORE_TEXT_DOMAIN),
+                    'carrier_placeholder'           => __('Select Carrier', HAVEN_CORE_TEXT_DOMAIN),
+                    'carrier_other'                 => __('Carrier Name', HAVEN_CORE_TEXT_DOMAIN),
+                    'carrier_required'              => __('Carrier is required.', HAVEN_CORE_TEXT_DOMAIN),
+                    'carrier_other_required'        => __('Carrier name is required for Other.', HAVEN_CORE_TEXT_DOMAIN),
 
                     // ─── Orders ──────────────────────────────────
                     'all'                           => __('All', HAVEN_CORE_TEXT_DOMAIN),
@@ -441,16 +450,17 @@
                     const Rtl = Vue.computed(() => globalStore.isRtl);
                     
                     return {
-                        i18n: initialData.i18n,
-                        currentUser: currentUser,
-                        mobileIcon: "<?= esc_url(get_site_icon_url()); ?>",
-                        sidebarItems: sidebarItems || [], // Sidebar items for navigation
-                        mobile: mobile,
-                        isRtl: Rtl,
-                        unreadSummary: null,
-                        unreadFetchInterval: null,
-                    };
-                },
+                    i18n: initialData.i18n,
+                    currentUser: currentUser,
+                    mobileIcon: "<?= esc_url(get_site_icon_url()); ?>",
+                    sidebarItems: sidebarItems || [], // Sidebar items for navigation
+                    mobile: mobile,
+                    isRtl: Rtl,
+                    unreadSummary: null,
+                    unreadFetchInterval: null,
+                    carrierGroups: initialData.trackingCarriers || {},
+                };
+            },
                 provide() {
                     return {
                         i18n: this.i18n,
@@ -468,6 +478,30 @@
                     },
                 },
                 methods: {
+                    carrierLabel(code) {
+                        if (!code) {
+                            return '';
+                        }
+                        const entry = this.carrierLabelMap[code];
+                        return entry ? entry.label : '';
+                    },
+                    formatCarrierDisplay(group) {
+                        if (!group) {
+                            return '';
+                        }
+                        const code = group.carrier_code;
+                        if (!code) {
+                            return '';
+                        }
+                        if (code === this.carrierOtherCode) {
+                            return group.carrier_name || this.i18n.carrier_other;
+                        }
+                        const entry = this.carrierLabelMap[code];
+                        if (entry) {
+                            return `${entry.group ? entry.group + ' • ' : ''}${entry.label}`;
+                        }
+                        return group.carrier_name || code;
+                    },
                     shouldTrackUnread() {
                         return this.$route?.path !== '/communications';
                     },
@@ -615,6 +649,8 @@
                         orders: [], // initially empty, will fetch from AJAX
                         ordersLoaded: false,
                         ordersPollingJob: null,
+                        carrierGroups: initialData.trackingCarriers || {},
+                        carrierOtherCode: 'OTHER',
 
                         // Pagination + filtering logic
                         currentPage: 1,
@@ -654,7 +690,9 @@
                         newTrackingDialog: {
                             visible: false,
                             order: null,
-                            tracking_number: ''
+                            tracking_number: '',
+                            carrier_code: 'OTHER',
+                            carrier_name: ''
                         },
 
                         moveProductsDialog: {
@@ -673,6 +711,11 @@
                         },
 
                         orderMenus: {},
+                        trackingValidation: {
+                            number: false,
+                            carrier: false,
+                            carrierOther: false
+                        },
 
                         debouncedSaves: {}, // maps order IDs to debounced save functions
                     
@@ -1108,10 +1151,16 @@
                                                         class="tracking-group rounded-xl p-6 shadow-md"
                                                     >
                                                         <div class="flex justify-between items-center mb-4">
-                                                            <h3 class="text-lg gap-x-2 font-semibold  mb-4 flex items-center">
-                                                                <i class="pi pi-barcode text-green-600"></i> 
-                                                                <span>{{ i18n.tracking_number }}: {{ group.tracking_number }}</span>
-                                                            </h3>
+                                                            <div>
+                                                                <h3 class="text-lg gap-x-2 font-semibold  mb-2 flex items-center">
+                                                                    <i class="pi pi-barcode text-green-600"></i> 
+                                                                    <span>{{ i18n.tracking_number }}: {{ group.tracking_number }}</span>
+                                                                </h3>
+                                                                <p class="text-xs text-slate-400 flex items-center gap-2" v-if="formatCarrierDisplay(group)">
+                                                                    <i class="pi pi-truck"></i>
+                                                                    <span>{{ formatCarrierDisplay(group) }}</span>
+                                                                </p>
+                                                            </div>
                                                             <div>
                                                                 <Button
                                                                     v-if="mobile && hasProductsToMove(order, group) && order.supplier_status !== 'fulfilled'"
@@ -1351,10 +1400,67 @@
                                                 id="tracking"
                                                 v-model="newTrackingDialog.tracking_number"
                                                 class="w-full"
+                                                :class="{'p-invalid': trackingValidation.number}"
                                             />
                                         </IconField>
                                         <label for="tracking">Tracking Number</label>
                                     </FloatLabel>
+                                    <small v-if="trackingValidation.number" class="p-error block mt-1">
+                                        {{ i18n.missing_tracking_number_detail }}
+                                    </small>
+                                    <FloatLabel variant="on" class="mt-5 block">
+                                        <Select
+                                            v-model="newTrackingDialog.carrier_code"
+                                            :options="carrierOptionGroups"
+                                            optionGroupLabel="label"
+                                            optionGroupChildren="items"
+                                            optionLabel="label"
+                                            optionValue="value"
+                                            class="w-full"
+                                            :class="{'p-invalid': trackingValidation.carrier}"
+                                            inputId="trackingCarrier"
+                                            filter
+                                            :filterFields="['label']"
+                                            :placeholder="i18n.carrier_placeholder"
+                                            :virtualScrollerOptions="{ itemSize: 42 }"
+                                        >
+                                            <template #value="slotProps">
+                                                <span v-if="slotProps.value" class="flex items-center gap-2">
+                                                    <i class="pi pi-truck text-slate-400 text-xs"></i>
+                                                    <span>{{ carrierLabel(slotProps.value) || slotProps.value }}</span>
+                                                </span>
+                                                <span v-else class="flex items-center gap-2 text-slate-400">
+                                                    <i class="pi pi-truck text-xs"></i>
+                                                    <span>{{ i18n.carrier_placeholder }}</span>
+                                                </span>
+                                            </template>
+                                            <template #optiongroup="slotProps">
+                                                <div class="text-xs uppercase tracking-wide text-slate-400 font-semibold px-1 py-1">
+                                                    {{ slotProps.option.label }}
+                                                </div>
+                                            </template>
+                                        </Select>
+                                        <label for="trackingCarrier">{{ i18n.carrier }}</label>
+                                    </FloatLabel>
+                                    <small v-if="trackingValidation.carrier" class="p-error block mt-1">
+                                        {{ i18n.carrier_required }}
+                                    </small>
+                                    <FloatLabel
+                                        variant="on"
+                                        class="mt-4 block"
+                                        v-if="newTrackingDialog.carrier_code === carrierOtherCode"
+                                    >
+                                        <InputText
+                                            v-model="newTrackingDialog.carrier_name"
+                                            class="w-full"
+                                            :class="{'p-invalid': trackingValidation.carrierOther}"
+                                            id="carrierOtherInput"
+                                        />
+                                        <label for="carrierOtherInput">{{ i18n.carrier_other }}</label>
+                                    </FloatLabel>
+                                    <small v-if="newTrackingDialog.carrier_code === carrierOtherCode && trackingValidation.carrierOther" class="p-error block mt-1">
+                                        {{ i18n.carrier_other_required }}
+                                    </small>
                                 </div>
                             </template>
 
@@ -1544,6 +1650,60 @@
                         // Server-side search now; return orders as-is
                         return this.orders;
                     },
+                    carrierLabelMap() {
+                        const map = {};
+                        const groups = this.carrierGroups || {};
+                        Object.entries(groups).forEach(([key, group]) => {
+                            const groupName = group?.name || key;
+                            Object.entries(group?.items || {}).forEach(([code, label]) => {
+                                map[code] = {
+                                    label,
+                                    group: groupName
+                                };
+                            });
+                        });
+                        return map;
+                    },
+                    carrierOptionGroups() {
+                        const output = [];
+                        const groups = this.carrierGroups || {};
+
+                        Object.entries(groups).forEach(([key, group]) => {
+                            const items = Object.entries(group?.items || {}).map(([code, label]) => ({
+                                label,
+                                value: code,
+                                group: group?.name || key
+                            }));
+
+                            if (items.length) {
+                                output.push({
+                                    key,
+                                    label: group?.name || key,
+                                    items
+                                });
+                            }
+                        });
+
+                        if (
+                            !output.some(group =>
+                                group.items.some(item => item.value === this.carrierOtherCode)
+                            )
+                        ) {
+                            output.push({
+                                key: 'other',
+                                label: this.i18n.carrier_other || 'Other',
+                                items: [
+                                    {
+                                        label: this.i18n.carrier_other || 'Other',
+                                        value: this.carrierOtherCode,
+                                        group: this.i18n.carrier_other || 'Other'
+                                    }
+                                ]
+                            });
+                        }
+
+                        return output;
+                    },
 
                     allProductsToMove() {
                         if (!this.moveProductsDialog.order) return [];
@@ -1583,6 +1743,26 @@
                     }
                 },
                 methods: {
+                    carrierLabel(code) {
+                        if (!code) {
+                            return '';
+                        }
+                        const entry = this.carrierLabelMap[code];
+                        return entry ? entry.label : '';
+                    },
+                    formatCarrierDisplay(group) {
+                        if (!group || !group.carrier_code) {
+                            return '';
+                        }
+                        if (group.carrier_code === this.carrierOtherCode) {
+                            return group.carrier_name || this.i18n.carrier_other;
+                        }
+                        const entry = this.carrierLabelMap[group.carrier_code];
+                        if (entry) {
+                            return entry.group ? `${entry.group} • ${entry.label}` : entry.label;
+                        }
+                        return group.carrier_name || group.carrier_code;
+                    },
                     filterOrders() {
                         // When user selects a new status, reset pagination and fetch orders with the selected status
                         this.ordersLoaded = false;  // Show loading state while fetching
@@ -1642,6 +1822,8 @@
                         this.newTrackingDialog.visible = true;
                         this.newTrackingDialog.order = order;
                         this.newTrackingDialog.tracking_number = '';
+                        this.newTrackingDialog.carrier_code = this.carrierOtherCode;
+                        this.newTrackingDialog.carrier_name = '';
                     },
 
                     /**
@@ -1651,13 +1833,36 @@
                     confirmAddTrackingGroup() {
                         const tracking = this.newTrackingDialog.tracking_number?.trim();
                         const order = this.newTrackingDialog.order;
+                        const carrierCode = this.newTrackingDialog.carrier_code || '';
+                        const carrierName = this.newTrackingDialog.carrier_name?.trim() || '';
+
+                        this.trackingValidation.number = false;
+                        this.trackingValidation.carrier = false;
+                        this.trackingValidation.carrierOther = false;
 
                         if (!tracking) {
+                            this.trackingValidation.number = true;
                             this.$toast.warning(this.i18n.missing_tracking_number_title, {
                                 description: this.i18n.missing_tracking_number_detail,
                                 duration: 3000
                             })
 
+                            return;
+                        }
+
+                        if (!carrierCode) {
+                            this.trackingValidation.carrier = true;
+                            this.$toast.warning(this.i18n.carrier_required, {
+                                duration: 3000
+                            });
+                            return;
+                        }
+
+                        if (carrierCode === this.carrierOtherCode && !carrierName) {
+                            this.trackingValidation.carrierOther = true;
+                            this.$toast.warning(this.i18n.carrier_other_required, {
+                                duration: 3000
+                            });
                             return;
                         }
 
@@ -1674,6 +1879,8 @@
                         order.trackingGroups.push({
                             id: groupId,
                             tracking_number: tracking,
+                            carrier_code: carrierCode,
+                            carrier_name: carrierCode === this.carrierOtherCode ? carrierName : '',
                             products: []
                         });
 
@@ -1681,6 +1888,8 @@
 
                         this.newTrackingDialog.visible = false;
                         this.newTrackingDialog.tracking_number = '';
+                         this.newTrackingDialog.carrier_code = this.carrierOtherCode;
+                         this.newTrackingDialog.carrier_name = '';
 
                         // Check if the panel was collapsed
                         const wasCollapsed = this.panelCollapsedState[order.id] === true;
@@ -1842,11 +2051,17 @@
                             const newOrders = result.orders || [];
 
                             newOrders.forEach(newOrder => {
-                                const trackingGroups = (newOrder.grouped_products || []).map(group => ({
-                                    id: 'group-' + group.tracking_number,
-                                    tracking_number: group.tracking_number,
-                                    products: group.products
-                                }));
+                                const trackingMeta = newOrder.tracking_groups_meta || {};
+                                const trackingGroups = (newOrder.grouped_products || []).map(group => {
+                                    const meta = trackingMeta[group.tracking_number] || {};
+                                    return {
+                                        id: 'group-' + group.tracking_number,
+                                        tracking_number: group.tracking_number,
+                                        carrier_code: group.carrier_code || meta.carrier_code || '',
+                                        carrier_name: group.carrier_name_other || meta.carrier_name_other || '',
+                                        products: group.products
+                                    };
+                                });
 
                                 const finalOrder = {
                                     ...newOrder,
@@ -2034,6 +2249,8 @@
                                         ungrouped_products: order.ungroupedProducts,
                                         grouped_products: order.trackingGroups.map(group => ({
                                             tracking_number: group.tracking_number,
+                                            carrier_code: group.carrier_code || '',
+                                            carrier_name_other: group.carrier_name || '',
                                             products: group.products
                                         }))
                                     }
@@ -2936,6 +3153,25 @@
                             return;
                         }
                         this.fetchSupplierOrders(newVal);
+                    },
+                    'newTrackingDialog.carrier_code'(newVal) {
+                        if (newVal !== this.carrierOtherCode) {
+                            this.newTrackingDialog.carrier_name = '';
+                            this.trackingValidation.carrierOther = false;
+                        }
+                        if (newVal) {
+                            this.trackingValidation.carrier = false;
+                        }
+                    },
+                    'newTrackingDialog.tracking_number'(val) {
+                        if (val && val.trim().length) {
+                            this.trackingValidation.number = false;
+                        }
+                    },
+                    'newTrackingDialog.carrier_name'(val) {
+                        if (val && val.trim().length) {
+                            this.trackingValidation.carrierOther = false;
+                        }
                     }
                 },
                 methods: {
