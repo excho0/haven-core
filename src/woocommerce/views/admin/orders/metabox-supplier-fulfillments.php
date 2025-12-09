@@ -78,7 +78,16 @@ $format_product = static function (int $product_id, int $qty) use ($order, $form
         }
     }
 
-    if ($order) {
+    if ($product && $product->is_type('variation')) {
+        $variation_text = wc_get_formatted_variation($product, true, false, false);
+        if ($variation_text) {
+            $variation = sanitize_text_field(
+                wp_strip_all_tags(html_entity_decode($variation_text, ENT_QUOTES, get_bloginfo('charset')))
+            );
+        }
+    }
+
+    if (!$variation && $order) {
         foreach ($order->get_items() as $item) {
             if (!$item instanceof WC_Order_Item_Product) {
                 continue;
