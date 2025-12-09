@@ -42,40 +42,108 @@ $format_money = static function (float $amount): ?string {
 $format_product = static function (int $product_id, int $qty) use ($order, $format_money): array {
     $product_name = esc_html__('Product not found', 'woocommerce');
     $variation = '';
+    $product = $product_id ? wc_get_product($product_id) : null;
+    $thumbnail_id = $product ? $product->get_image_id() : 0;
+    $parent_product = null;
 
-    if ($order) {
+    if ($product && $product->is_type('variation')) {
+        $parent_id = $product->get_parent_id();
+        if ($parent_id) {
+            $parent_product = wc_get_product($parent_id);
+            if (!$thumbnail_id) {
+                $thumbnail_id = $parent_product ? $parent_product->get_image_id() : 0;
+            }
+        }
+    }
+
+    $name_source = $parent_product ?: $product;
+    if ($name_source) {
+        $raw_name = html_entity_decode($name_source->get_name(), ENT_QUOTES, get_bloginfo('charset'));
+        $product_name = sanitize_text_field(wp_strip_all_tags($raw_name));
+    } elseif ($order) {
         foreach ($order->get_items() as $item) {
-            if ($item instanceof WC_Order_Item_Product && (int) $item->get_product_id() === $product_id) {
+            if (!$item instanceof WC_Order_Item_Product) {
+                continue;
+            }
+
+            $matches_variation = $product && $product->is_type('variation')
+                ? (int) $item->get_variation_id() === $product_id
+                : (int) $item->get_product_id() === $product_id;
+
+            if ($matches_variation) {
                 $decoded_name = html_entity_decode($item->get_name(), ENT_QUOTES, get_bloginfo('charset'));
                 $product_name = sanitize_text_field(wp_strip_all_tags($decoded_name));
-
-                if ($item->get_variation_id()) {
-                    $meta_data = $item->get_meta_data();
-                    $variation_parts = [];
-
-                    foreach ($meta_data as $meta) {
-                        if (strpos($meta->key, 'attribute_') === 0) {
-                            $label = sanitize_text_field(wp_strip_all_tags(wc_attribute_label(str_replace('attribute_', '', $meta->key))));
-                            $value = sanitize_text_field(wp_strip_all_tags($meta->value));
-                            if ($label && $value) {
-                                $variation_parts[] = sprintf('%s: %s', $label, $value);
-                            }
-                        }
-                    }
-
-                    if (!empty($variation_parts)) {
-                        $variation = implode(', ', $variation_parts);
-                    }
-                }
-
                 break;
             }
         }
     }
 
-    $product_url = get_permalink($product_id) ?: '';
-    $thumb = get_the_post_thumbnail_url($product_id, 'thumbnail') ?: '';
-    $supplier_price = (float) get_post_meta($product_id, '_supplier_price', true);
+    if ($order) {
+        foreach ($order->get_items() as $item) {
+            if (!$item instanceof WC_Order_Item_Product) {
+                continue;
+            }
+
+            $matches_variation = $product && $product->is_type('variation')
+                ? (int) $item->get_variation_id() === $product_id
+                : (int) $item->get_product_id() === $product_id;
+
+            if (!$matches_variation) {
+                continue;
+            }
+
+            if ($item->get_variation_id()) {
+                $variation_parts = [];
+
+                foreach ($item->get_meta_data() as $meta) {
+                    $meta_data = $meta->get_data();
+                    $meta_key = $meta_data['key'] ?? '';
+                    $meta_value = $meta_data['value'] ?? '';
+
+                    if (strpos($meta_key, 'attribute_') === 0) {
+                        $label = sanitize_text_field(wp_strip_all_tags(wc_attribute_label(str_replace('attribute_', '', $meta_key))));
+                        $value = sanitize_text_field(wp_strip_all_tags($meta_value));
+                        if ($label && $value) {
+                            $variation_parts[] = sprintf('%s: %s', $label, $value);
+                        }
+                    }
+                }
+
+                if (!empty($variation_parts)) {
+                    $variation = implode(', ', $variation_parts);
+                }
+            }
+
+            break;
+        }
+    }
+
+    $product_url = $product ? $product->get_permalink() : get_permalink($product_id);
+    $thumb = '';
+    if ($thumbnail_id) {
+        $thumb = wp_get_attachment_image_url($thumbnail_id, 'thumbnail') ?: '';
+    }
+    if (!$thumb) {
+        $thumb = get_the_post_thumbnail_url($product_id, 'thumbnail') ?: '';
+    }
+
+    $supplier_price = 0.0;
+    $price_ids = [$product_id];
+    if ($product && $product->is_type('variation')) {
+        $parent_id = $product->get_parent_id();
+        if ($parent_id) {
+            $price_ids[] = $parent_id;
+        }
+    }
+
+    foreach ($price_ids as $price_id) {
+        $price = (float) get_post_meta($price_id, '_supplier_price', true);
+        if ($price > 0) {
+            $supplier_price = $price;
+            break;
+        }
+    }
+
     $line_total = $supplier_price * $qty;
 
     return [
@@ -83,7 +151,7 @@ $format_product = static function (int $product_id, int $qty) use ($order, $form
         'quantity'                 => $qty,
         'name'                     => $product_name,
         'variation'                => $variation,
-        'product_url'              => $product_url,
+        'product_url'              => $product_url ?: '',
         'thumbnail'                => $thumb,
         'supplier_price'           => $supplier_price > 0 ? $supplier_price : null,
         'supplier_price_formatted' => $supplier_price > 0 ? $format_money($supplier_price) : null,
