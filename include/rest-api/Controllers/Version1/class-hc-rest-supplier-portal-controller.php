@@ -1688,12 +1688,27 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		$meta_data = $item->get_meta_data();
 		$parts     = [];
 		foreach ( $meta_data as $meta ) {
-			$meta_key = method_exists( $meta, 'get_data' ) ? ( $meta->get_data()['key'] ?? '' ) : ( $meta->key ?? '' );
+			$meta_key   = method_exists( $meta, 'get_data' ) ? ( $meta->get_data()['key'] ?? '' ) : ( $meta->key ?? '' );
 			$meta_value = method_exists( $meta, 'get_data' ) ? ( $meta->get_data()['value'] ?? '' ) : ( $meta->value ?? '' );
+			if ( '' === $meta_value ) {
+				continue;
+			}
 
+			$label_source = '';
 			if ( strpos( $meta_key, 'attribute_' ) === 0 ) {
-				$label = wc_attribute_label( str_replace( 'attribute_', '', $meta_key ) );
-				$parts[] = $label . ': ' . $meta_value;
+				$label_source = wc_attribute_label( str_replace( 'attribute_', '', $meta_key ) );
+			} else {
+				$label_source = $meta_key;
+			}
+
+			$label = sanitize_text_field( wp_strip_all_tags( $label_source ) );
+			if ( ! $label ) {
+				$label = ucwords( str_replace( [ 'attribute_', '_', '-' ], ' ', $meta_key ) );
+			}
+			$value = sanitize_text_field( wp_strip_all_tags( $meta_value ) );
+
+			if ( $label && $value ) {
+				$parts[] = $label . ': ' . $value;
 			}
 		}
 

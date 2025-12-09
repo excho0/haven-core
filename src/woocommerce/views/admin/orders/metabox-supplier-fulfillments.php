@@ -105,13 +105,25 @@ $format_product = static function (int $product_id, int $qty, ?int $variation_id
             $meta_data = $meta->get_data();
             $meta_key = $meta_data['key'] ?? '';
             $meta_value = $meta_data['value'] ?? '';
+            if ($meta_value === '') {
+                continue;
+            }
 
+            $label_source = '';
             if (strpos($meta_key, 'attribute_') === 0) {
-                $label = sanitize_text_field(wp_strip_all_tags(wc_attribute_label(str_replace('attribute_', '', $meta_key))));
-                $value = sanitize_text_field(wp_strip_all_tags($meta_value));
-                if ($label && $value) {
-                    $variation_parts[] = sprintf('%s: %s', $label, $value);
-                }
+                $label_source = wc_attribute_label(str_replace('attribute_', '', $meta_key));
+            } else {
+                $label_source = $meta_key;
+            }
+
+            $label = sanitize_text_field(wp_strip_all_tags($label_source));
+            if (!$label) {
+                $label = ucwords(str_replace(['attribute_', '_', '-'], ' ', $meta_key));
+            }
+
+            $value = sanitize_text_field(wp_strip_all_tags($meta_value));
+            if ($label && $value) {
+                $variation_parts[] = sprintf('%s: %s', $label, $value);
             }
         }
 
