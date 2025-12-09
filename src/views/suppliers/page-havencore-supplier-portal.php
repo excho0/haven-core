@@ -1077,6 +1077,9 @@
                                                                         <h3 class="text-base sm:text-lg font-semibold  mb-2">
                                                                             {{ product.product_name || '[No Name]' }}
                                                                         </h3>
+                                                                        <p v-if="product.variation" class="text-xs text-slate-500 mb-1">
+                                                                            {{ product.variation }}
+                                                                        </p>
 
                                                                         <p v-if="product.sku" class=" mb-1">
                                                                             <span class="font-semibold">{{ i18n.sku }}:</span>
@@ -1263,6 +1266,9 @@
                                                                             <h3 class="text-base sm:text-lg font-semibold  mb-2">
                                                                                 {{ product.product_name || '[No Name]' }}
                                                                             </h3>
+                                                                            <p v-if="product.variation" class="text-xs text-slate-500 mb-1">
+                                                                                {{ product.variation }}
+                                                                            </p>
 
                                                                             <p v-if="product.sku" class=" mb-1">
                                                                                 <span class="font-semibold">{{ i18n.sku }}:</span>

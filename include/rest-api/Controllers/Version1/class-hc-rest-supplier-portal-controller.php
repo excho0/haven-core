@@ -1102,25 +1102,42 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			// Ungrouped products
 			$ungrouped = [];
 			foreach ( $data[ $supplier_id ]['ungrouped_products'] ?? [] as $entry ) {
-				$product_id = $entry['product_id'] ?? null;
-				if ( ! $product_id ) continue;
+				$product_id   = isset( $entry['product_id'] ) ? (int) $entry['product_id'] : 0;
+				if ( ! $product_id ) {
+					continue;
+				}
 
-				$product = wc_get_product( $product_id );
-				$qty = 0;
-				foreach ( $order->get_items() as $item ) {
-					if ( $item instanceof \WC_Order_Item_Product && $item->get_product_id() == $product_id ) {
-						$qty = $item->get_quantity();
-						break;
-					}
+				$variation_id = isset( $entry['variation_id'] ) ? (int) $entry['variation_id'] : 0;
+				$product      = wc_get_product( $variation_id ?: $product_id );
+				$order_item   = $this->find_matching_order_item( $order, $product_id, $variation_id );
+				if ( ! $variation_id && $order_item && $order_item->get_variation_id() ) {
+					$variation_id = (int) $order_item->get_variation_id();
+				}
+
+				$qty = isset( $entry['quantity'] ) ? (int) $entry['quantity'] : 0;
+				if ( $qty <= 0 && $order_item ) {
+					$qty = (int) $order_item->get_quantity();
+				}
+
+				$variation_text = $order_item ? $this->format_item_variation( $order_item ) : '';
+
+				$thumbnail = '';
+				if ( $variation_id ) {
+					$thumbnail = get_the_post_thumbnail_url( $variation_id, 'thumbnail' ) ?: '';
+				}
+				if ( ! $thumbnail ) {
+					$thumbnail = get_the_post_thumbnail_url( $product_id, 'thumbnail' ) ?: '';
 				}
 
 				$ungrouped[] = [
-					'product_id' => $product_id,
+					'product_id'   => $product_id,
+					'variation_id' => $variation_id ?: null,
 					'product_name' => $product ? $product->get_name() : 'Unknown',
-					'note' => $entry['note'] ?? '',
-					'sku' => $product ? $product->get_sku() : '',
-					'qty' => $qty,
-					'thumbnail' => $product ? get_the_post_thumbnail_url( $product_id, 'thumbnail' ) : null
+					'variation'    => $variation_text,
+					'note'         => $entry['note'] ?? '',
+					'sku'          => $product ? $product->get_sku() : '',
+					'qty'          => $qty,
+					'thumbnail'    => $thumbnail,
 				];
 			}
 
@@ -1136,22 +1153,38 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				foreach ( $current_products as $pid => $info ) {
 					$pid = (int) $pid;
 					if ( ! $pid ) { continue; }
-					$product = wc_get_product( $pid );
-					$qty = 0;
-					foreach ( $order->get_items() as $item ) {
-						if ( $item instanceof \WC_Order_Item_Product && $item->get_product_id() == $pid ) {
-							$qty = $item->get_quantity();
-							break;
-						}
+
+					$variation_id = isset( $info['variation_id'] ) ? (int) $info['variation_id'] : 0;
+					$product      = wc_get_product( $variation_id ?: $pid );
+					$order_item   = $this->find_matching_order_item( $order, $pid, $variation_id );
+					if ( ! $variation_id && $order_item && $order_item->get_variation_id() ) {
+						$variation_id = (int) $order_item->get_variation_id();
+					}
+
+					$qty = isset( $info['quantity'] ) ? (int) $info['quantity'] : 0;
+					if ( $qty <= 0 && $order_item ) {
+						$qty = (int) $order_item->get_quantity();
+					}
+
+					$variation_text = $order_item ? $this->format_item_variation( $order_item ) : '';
+
+					$thumbnail = '';
+					if ( $variation_id ) {
+						$thumbnail = get_the_post_thumbnail_url( $variation_id, 'thumbnail' ) ?: '';
+					}
+					if ( ! $thumbnail ) {
+						$thumbnail = get_the_post_thumbnail_url( $pid, 'thumbnail' ) ?: '';
 					}
 
 					$list[] = [
-						'product_id' => $pid,
+						'product_id'   => $pid,
+						'variation_id' => $variation_id ?: null,
 						'product_name' => $product ? $product->get_name() : 'Unknown',
-						'note' => $info['note'] ?? '',
-						'sku' => $product ? $product->get_sku() : '',
-						'qty' => $qty,
-						'thumbnail' => $product ? get_the_post_thumbnail_url( $pid, 'thumbnail' ) : null
+						'variation'    => $variation_text,
+						'note'         => $info['note'] ?? '',
+						'sku'          => $product ? $product->get_sku() : '',
+						'qty'          => $qty,
+						'thumbnail'    => $thumbnail,
 					];
 				}
 				$meta = $tracking_meta[ (string) $tracking ] ?? [];
