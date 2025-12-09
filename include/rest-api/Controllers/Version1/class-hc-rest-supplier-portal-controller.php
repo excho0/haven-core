@@ -561,8 +561,10 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				if ( ! $pid ) continue;
 
 				$ungrouped_products[] = [
-					'product_id' => $pid,
-					'note'       => sanitize_textarea_field( $prod['note'] ?? '' ),
+					'product_id'   => $pid,
+					'variation_id' => isset( $prod['variation_id'] ) ? (int) $prod['variation_id'] : null,
+					'quantity'     => isset( $prod['quantity'] ) ? max( 1, (int) $prod['quantity'] ) : 1,
+					'note'         => sanitize_textarea_field( $prod['note'] ?? '' ),
 				];
 			}
 		}
@@ -589,7 +591,9 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 					if ( ! $pid ) continue;
 
 					$grouped_products[ $tracking ][ $pid ] = [
-						'note' => sanitize_textarea_field( $prod['note'] ?? '' ),
+						'variation_id' => isset( $prod['variation_id'] ) ? (int) $prod['variation_id'] : null,
+						'quantity'     => isset( $prod['quantity'] ) ? max( 1, (int) $prod['quantity'] ) : 1,
+						'note'         => sanitize_textarea_field( $prod['note'] ?? '' ),
 					];
 				}
 			}
@@ -1526,8 +1530,9 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				continue;
 			}
 
-			$quantity = $this->resolve_order_item_quantity( $order, $product_id );
-			$entry    = $this->build_product_entry( $order, $product_id, $quantity );
+			$variation_id = isset( $product['variation_id'] ) ? (int) $product['variation_id'] : 0;
+			$quantity     = isset( $product['quantity'] ) ? (int) $product['quantity'] : $this->resolve_order_item_quantity( $order, $product_id, $variation_id );
+			$entry        = $this->build_product_entry( $order, $product_id, $quantity, $variation_id );
 			if ( ! $entry ) {
 				continue;
 			}
@@ -1550,8 +1555,9 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 					continue;
 				}
 
-				$qty   = isset( $details['quantity'] ) ? (int) $details['quantity'] : $this->resolve_order_item_quantity( $order, $product_id );
-				$entry = $this->build_product_entry( $order, $product_id, $qty );
+				$variation_id = isset( $details['variation_id'] ) ? (int) $details['variation_id'] : 0;
+				$qty          = isset( $details['quantity'] ) ? (int) $details['quantity'] : $this->resolve_order_item_quantity( $order, $product_id, $variation_id );
+				$entry        = $this->build_product_entry( $order, $product_id, $qty, $variation_id );
 				if ( ! $entry ) {
 					continue;
 				}
@@ -1570,9 +1576,17 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		return $result;
 	}
 
-	private function resolve_order_item_quantity( \WC_Order $order, int $product_id ): int {
+	private function resolve_order_item_quantity( \WC_Order $order, int $product_id, int $variation_id = 0 ): int {
 		foreach ( $order->get_items() as $item ) {
-			if ( $item instanceof \WC_Order_Item_Product && (int) $item->get_product_id() === $product_id ) {
+			if ( ! $item instanceof \WC_Order_Item_Product ) {
+				continue;
+			}
+
+			$matches = $variation_id
+				? (int) $item->get_variation_id() === $variation_id
+				: (int) $item->get_product_id() === $product_id;
+
+			if ( $matches ) {
 				return max( 1, (int) $item->get_quantity() );
 			}
 		}
@@ -1580,31 +1594,71 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		return 1;
 	}
 
-	private function build_product_entry( \WC_Order $order, int $product_id, int $quantity ): ?array {
-		$product_name = __( 'Product not found', 'woocommerce' );
-		$variation    = '';
+	private function build_product_entry( \WC_Order $order, int $product_id, int $quantity, int $variation_id = 0 ): ?array {
+		$quantity     = max( 1, $quantity );
+		$order_item   = $this->find_matching_order_item( $order, $product_id, $variation_id );
+		if ( ! $variation_id && $order_item && $order_item->get_variation_id() ) {
+			$variation_id = (int) $order_item->get_variation_id();
+		}
 
-		foreach ( $order->get_items() as $item ) {
-			if ( $item instanceof \WC_Order_Item_Product && (int) $item->get_product_id() === $product_id ) {
-				$product_name = $item->get_name();
-				$variation    = $this->format_item_variation( $item );
+		$target_id     = $variation_id ?: $product_id;
+		$product             = $target_id ? wc_get_product( $target_id ) : null;
+		$parent              = null;
+		$product_name        = __( 'Product not found', 'woocommerce' );
+		$variation           = '';
+		$product_url         = '';
+		$thumbnail_url       = '';
+		$variation_thumbnail = 0;
+
+		if ( $product && $product->is_type( 'variation' ) ) {
+			$variation_thumbnail = $product->get_image_id();
+			$parent_id = $product->get_parent_id();
+			if ( $parent_id ) {
+				$parent = wc_get_product( $parent_id );
+			}
+		}
+
+		$name_source = $parent ?: $product;
+		if ( $name_source ) {
+			$product_name = sanitize_text_field( wp_strip_all_tags( html_entity_decode( $name_source->get_name(), ENT_QUOTES, get_bloginfo( 'charset' ) ) ) );
+			$product_url  = $name_source->get_permalink();
+			$thumbnail_id = $variation_thumbnail ?: ( $name_source ? $name_source->get_image_id() : 0 );
+			if ( ! $thumbnail_id && $parent ) {
+				$thumbnail_id = $parent->get_image_id();
+			}
+
+			if ( $thumbnail_id ) {
+				$thumbnail_url = wp_get_attachment_image_url( $thumbnail_id, 'thumbnail' ) ?: '';
+			}
+		} else {
+			$product_url   = get_permalink( $product_id ) ?: '';
+			$thumbnail_url = get_the_post_thumbnail_url( $product_id, 'thumbnail' ) ?: '';
+		}
+
+		if ( $order_item ) {
+			$variation = $this->format_item_variation( $order_item );
+		}
+
+		$price_candidates = array_filter( [ $variation_id ?: null, $product_id, $parent ? $parent->get_id() : null ] );
+		$price_value      = 0;
+		foreach ( $price_candidates as $candidate ) {
+			$price = get_post_meta( $candidate, '_supplier_price', true );
+			if ( is_numeric( $price ) && (float) $price > 0 ) {
+				$price_value = (float) $price;
 				break;
 			}
 		}
 
-		$product_url = get_permalink( $product_id ) ?: '';
-		$thumbnail   = get_the_post_thumbnail_url( $product_id, 'thumbnail' ) ?: '';
-		$supplier_price = get_post_meta( $product_id, '_supplier_price', true );
-		$price_value    = is_numeric( $supplier_price ) ? (float) $supplier_price : 0;
-		$line_total     = $price_value > 0 ? $price_value * max( 1, $quantity ) : 0;
+		$line_total = $price_value > 0 ? $price_value * $quantity : 0;
 
 		return [
 			'product_id'               => $product_id,
+			'variation_id'             => $variation_id ?: null,
 			'quantity'                 => $quantity,
 			'name'                     => $product_name,
 			'variation'                => $variation,
 			'product_url'              => $product_url,
-			'thumbnail'                => $thumbnail,
+			'thumbnail'                => $thumbnail_url,
 			'supplier_price'           => $price_value > 0 ? $price_value : null,
 			'supplier_price_formatted' => $price_value > 0 ? $this->format_price_display( $price_value ) : null,
 			'line_total_formatted'     => $line_total > 0 ? $this->format_price_display( $line_total ) : null,
@@ -1612,13 +1666,34 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		];
 	}
 
+	private function find_matching_order_item( \WC_Order $order, int $product_id, int $variation_id = 0 ): ?\WC_Order_Item_Product {
+		foreach ( $order->get_items() as $item ) {
+			if ( ! $item instanceof \WC_Order_Item_Product ) {
+				continue;
+			}
+
+			$matches = $variation_id
+				? (int) $item->get_variation_id() === $variation_id
+				: (int) $item->get_product_id() === $product_id;
+
+			if ( $matches ) {
+				return $item;
+			}
+		}
+
+		return null;
+	}
+
 	private function format_item_variation( \WC_Order_Item_Product $item ): string {
 		$meta_data = $item->get_meta_data();
 		$parts     = [];
 		foreach ( $meta_data as $meta ) {
-			if ( strpos( $meta->key, 'attribute_' ) === 0 ) {
-				$label = wc_attribute_label( str_replace( 'attribute_', '', $meta->key ) );
-				$parts[] = $label . ': ' . $meta->value;
+			$meta_key = method_exists( $meta, 'get_data' ) ? ( $meta->get_data()['key'] ?? '' ) : ( $meta->key ?? '' );
+			$meta_value = method_exists( $meta, 'get_data' ) ? ( $meta->get_data()['value'] ?? '' ) : ( $meta->value ?? '' );
+
+			if ( strpos( $meta_key, 'attribute_' ) === 0 ) {
+				$label = wc_attribute_label( str_replace( 'attribute_', '', $meta_key ) );
+				$parts[] = $label . ': ' . $meta_value;
 			}
 		}
 

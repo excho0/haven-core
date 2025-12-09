@@ -446,8 +446,10 @@ class SupplierHooks
                         // Move each product in this group to ungrouped, formatting as originally created
                         foreach ($group as $product_id => $product_data) {
                             $updated_supplier_data[$supplier_id]['ungrouped_products'][] = [
-                                'product_id' => $product_id,
-                                'note' => ''
+                                'product_id'   => $product_id,
+                                'variation_id' => isset($product_data['variation_id']) ? (int) $product_data['variation_id'] : null,
+                                'quantity'     => isset($product_data['quantity']) ? (int) $product_data['quantity'] : 1,
+                                'note'         => ''
                             ];
                         }
 

@@ -190,9 +190,14 @@ class Orders
                     ];
                 }
 
+                $variation_id = (int) $item->get_variation_id();
+                $quantity = max(1, (int) $item->get_quantity());
+
                 $suppliers[$supplier_id]['ungrouped_products'][] = [
-                    'product_id' => $product_id,
-                    'note' => ''
+                    'product_id'   => $product_id,
+                    'variation_id' => $variation_id ?: null,
+                    'quantity'     => $quantity,
+                    'note'         => ''
                 ];
             }
         }

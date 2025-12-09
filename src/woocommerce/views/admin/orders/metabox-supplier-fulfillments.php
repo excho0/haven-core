@@ -39,20 +39,43 @@ $format_money = static function (float $amount): ?string {
     return trim($text);
 };
 
-$format_product = static function (int $product_id, int $qty) use ($order, $format_money): array {
+$format_product = static function (int $product_id, int $qty, ?int $variation_id = null) use ($order, $format_money): array {
     $product_name = esc_html__('Product not found', 'woocommerce');
     $variation = '';
-    $product = $product_id ? wc_get_product($product_id) : null;
-    $thumbnail_id = $product ? $product->get_image_id() : 0;
+    $matched_item = null;
+
+    if ($order) {
+        foreach ($order->get_items() as $item) {
+            if (!$item instanceof WC_Order_Item_Product) {
+                continue;
+            }
+
+            $matches = $variation_id
+                ? (int) $item->get_variation_id() === $variation_id
+                : (int) $item->get_product_id() === $product_id;
+
+            if ($matches) {
+                $matched_item = $item;
+                break;
+            }
+        }
+    }
+
+    if (!$variation_id && $matched_item && $matched_item->get_variation_id()) {
+        $variation_id = (int) $matched_item->get_variation_id();
+    }
+
+    $target_id = $variation_id ?: $product_id;
+    $product = $target_id ? wc_get_product($target_id) : null;
     $parent_product = null;
+    $thumbnail_id = 0;
+    $variation_thumbnail = 0;
 
     if ($product && $product->is_type('variation')) {
+        $variation_thumbnail = $product->get_image_id();
         $parent_id = $product->get_parent_id();
         if ($parent_id) {
             $parent_product = wc_get_product($parent_id);
-            if (!$thumbnail_id) {
-                $thumbnail_id = $parent_product ? $parent_product->get_image_id() : 0;
-            }
         }
     }
 
@@ -60,22 +83,10 @@ $format_product = static function (int $product_id, int $qty) use ($order, $form
     if ($name_source) {
         $raw_name = html_entity_decode($name_source->get_name(), ENT_QUOTES, get_bloginfo('charset'));
         $product_name = sanitize_text_field(wp_strip_all_tags($raw_name));
-    } elseif ($order) {
-        foreach ($order->get_items() as $item) {
-            if (!$item instanceof WC_Order_Item_Product) {
-                continue;
-            }
-
-            $matches_variation = $product && $product->is_type('variation')
-                ? (int) $item->get_variation_id() === $product_id
-                : (int) $item->get_product_id() === $product_id;
-
-            if ($matches_variation) {
-                $decoded_name = html_entity_decode($item->get_name(), ENT_QUOTES, get_bloginfo('charset'));
-                $product_name = sanitize_text_field(wp_strip_all_tags($decoded_name));
-                break;
-            }
-        }
+        $thumbnail_id = $variation_thumbnail ?: $name_source->get_image_id();
+    } elseif ($matched_item) {
+        $decoded_name = html_entity_decode($matched_item->get_name(), ENT_QUOTES, get_bloginfo('charset'));
+        $product_name = sanitize_text_field(wp_strip_all_tags($decoded_name));
     }
 
     if ($product && $product->is_type('variation')) {
@@ -87,63 +98,42 @@ $format_product = static function (int $product_id, int $qty) use ($order, $form
         }
     }
 
-    if (!$variation && $order) {
-        foreach ($order->get_items() as $item) {
-            if (!$item instanceof WC_Order_Item_Product) {
-                continue;
-            }
+    if (!$variation && $matched_item && $matched_item->get_variation_id()) {
+        $variation_parts = [];
 
-            $matches_variation = $product && $product->is_type('variation')
-                ? (int) $item->get_variation_id() === $product_id
-                : (int) $item->get_product_id() === $product_id;
+        foreach ($matched_item->get_meta_data() as $meta) {
+            $meta_data = $meta->get_data();
+            $meta_key = $meta_data['key'] ?? '';
+            $meta_value = $meta_data['value'] ?? '';
 
-            if (!$matches_variation) {
-                continue;
-            }
-
-            if ($item->get_variation_id()) {
-                $variation_parts = [];
-
-                foreach ($item->get_meta_data() as $meta) {
-                    $meta_data = $meta->get_data();
-                    $meta_key = $meta_data['key'] ?? '';
-                    $meta_value = $meta_data['value'] ?? '';
-
-                    if (strpos($meta_key, 'attribute_') === 0) {
-                        $label = sanitize_text_field(wp_strip_all_tags(wc_attribute_label(str_replace('attribute_', '', $meta_key))));
-                        $value = sanitize_text_field(wp_strip_all_tags($meta_value));
-                        if ($label && $value) {
-                            $variation_parts[] = sprintf('%s: %s', $label, $value);
-                        }
-                    }
-                }
-
-                if (!empty($variation_parts)) {
-                    $variation = implode(', ', $variation_parts);
+            if (strpos($meta_key, 'attribute_') === 0) {
+                $label = sanitize_text_field(wp_strip_all_tags(wc_attribute_label(str_replace('attribute_', '', $meta_key))));
+                $value = sanitize_text_field(wp_strip_all_tags($meta_value));
+                if ($label && $value) {
+                    $variation_parts[] = sprintf('%s: %s', $label, $value);
                 }
             }
+        }
 
-            break;
+        if (!empty($variation_parts)) {
+            $variation = implode(', ', $variation_parts);
         }
     }
 
-    $product_url = $product ? $product->get_permalink() : get_permalink($product_id);
+    $product_url = ($name_source ? $name_source->get_permalink() : '') ?: get_permalink($product_id);
     $thumb = '';
     if ($thumbnail_id) {
         $thumb = wp_get_attachment_image_url($thumbnail_id, 'thumbnail') ?: '';
+    }
+    if (!$thumb && $variation_id && $parent_product) {
+        $thumb = wp_get_attachment_image_url($parent_product->get_image_id(), 'thumbnail') ?: '';
     }
     if (!$thumb) {
         $thumb = get_the_post_thumbnail_url($product_id, 'thumbnail') ?: '';
     }
 
     $supplier_price = 0.0;
-    $price_ids = [$product_id];
-    if ($product && $product->is_type('variation')) {
-        $parent_id = $product->get_parent_id();
-        if ($parent_id) {
-            $price_ids[] = $parent_id;
-        }
-    }
+    $price_ids = array_filter([$variation_id, $product_id, $parent_product ? $parent_product->get_id() : null]);
 
     foreach ($price_ids as $price_id) {
         $price = (float) get_post_meta($price_id, '_supplier_price', true);
@@ -157,6 +147,7 @@ $format_product = static function (int $product_id, int $qty) use ($order, $form
 
     return [
         'product_id'               => $product_id,
+        'variation_id'             => $variation_id ?: null,
         'quantity'                 => $qty,
         'name'                     => $product_name,
         'variation'                => $variation,
@@ -200,12 +191,13 @@ foreach ($supplier_data as $sid => $data) {
         foreach ($data['ungrouped_products'] as $product) {
             $product_id = isset($product['product_id']) ? (int) $product['product_id'] : 0;
             $qty = isset($product['quantity']) ? (int) $product['quantity'] : 1;
+            $variation_id = isset($product['variation_id']) ? (int) $product['variation_id'] : null;
 
             if (!$product_id) {
                 continue;
             }
 
-            $entry = $format_product($product_id, $qty);
+            $entry = $format_product($product_id, $qty, $variation_id);
             $supplier_grand_total += $entry['line_total_raw'];
             unset($entry['line_total_raw']);
 
@@ -222,12 +214,13 @@ foreach ($supplier_data as $sid => $data) {
             foreach ($products as $product_id => $product_data) {
                 $product_id = (int) $product_id;
                 $qty = isset($product_data['quantity']) ? (int) $product_data['quantity'] : 1;
+                $variation_id = isset($product_data['variation_id']) ? (int) $product_data['variation_id'] : null;
 
                 if (!$product_id) {
                     continue;
                 }
 
-                $entry = $format_product($product_id, $qty);
+                $entry = $format_product($product_id, $qty, $variation_id);
                 $supplier_grand_total += $entry['line_total_raw'];
                 unset($entry['line_total_raw']);
 

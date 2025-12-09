@@ -38,19 +38,37 @@ if (!empty($supplier_data)) {
         if (!empty($supplier_info['grouped_products'])) {
             foreach ($supplier_info['grouped_products'] as $tracking_number => $products) {
                 foreach ($products as $product_id => $product_data) {
+                    $variation_id = isset($product_data['variation_id']) ? (int) $product_data['variation_id'] : 0;
+                    $product_quantity = isset($product_data['quantity']) ? (int) $product_data['quantity'] : 1;
+
                     foreach ($order->get_items() as $item) {
-                        if ($item instanceof WC_Order_Item_Product && $item->get_product_id() == $product_id) {
+                        if (!$item instanceof WC_Order_Item_Product) {
+                            continue;
+                        }
+
+                        $matches = $variation_id
+                            ? (int) $item->get_variation_id() === $variation_id
+                            : (int) $item->get_product_id() === $product_id;
+
+                        if ($matches) {
                             $product_name = sanitize_text_field(
                                 wp_strip_all_tags(
                                     html_entity_decode($item->get_name(), ENT_QUOTES, get_bloginfo('charset'))
                                 )
                             );
-                            $product_quantity = $item->get_quantity();
-                            $product_image = get_the_post_thumbnail_url($product_id, 'thumbnail');
-                            $product_link = get_permalink($product_id);
+                            if ($product_quantity <= 0) {
+                                $product_quantity = $item->get_quantity();
+                            }
+                            $image_source_id = $variation_id ?: $product_id;
+                            $product_image = get_the_post_thumbnail_url($image_source_id, 'thumbnail');
+                            if (!$product_image && $variation_id) {
+                                $product_image = get_the_post_thumbnail_url($product_id, 'thumbnail');
+                            }
+                            $product_link = get_permalink($variation_id ?: $product_id);
 
                             $products_tracking[] = [
                                 'product_id'      => $product_id,
+                                'variation_id'    => $variation_id ?: null,
                                 'product_name'    => $product_name,
                                 'tracking_number' => $tracking_number,
                                 'image_url'       => $product_image ?: '',
@@ -68,20 +86,42 @@ if (!empty($supplier_data)) {
         // Ungrouped Products (pending)
         if (!empty($supplier_info['ungrouped_products'])) {
             foreach ($supplier_info['ungrouped_products'] as $product) {
-                $product_id = $product['product_id'];
+                $product_id = isset($product['product_id']) ? (int) $product['product_id'] : 0;
+                if (!$product_id) {
+                    continue;
+                }
+
+                $variation_id = isset($product['variation_id']) ? (int) $product['variation_id'] : 0;
+                $product_quantity = isset($product['quantity']) ? (int) $product['quantity'] : 1;
+
                 foreach ($order->get_items() as $item) {
-                    if ($item instanceof WC_Order_Item_Product && $item->get_product_id() == $product_id) {
+                    if (!$item instanceof WC_Order_Item_Product) {
+                        continue;
+                    }
+
+                    $matches = $variation_id
+                        ? (int) $item->get_variation_id() === $variation_id
+                        : (int) $item->get_product_id() === $product_id;
+
+                    if ($matches) {
                         $product_name = sanitize_text_field(
                             wp_strip_all_tags(
                                 html_entity_decode($item->get_name(), ENT_QUOTES, get_bloginfo('charset'))
                             )
                         );
-                        $product_quantity = $item->get_quantity();
-                        $product_image = get_the_post_thumbnail_url($product_id, 'thumbnail');
-                        $product_link = get_permalink($product_id);
+                        if ($product_quantity <= 0) {
+                            $product_quantity = $item->get_quantity();
+                        }
+                        $image_source_id = $variation_id ?: $product_id;
+                        $product_image = get_the_post_thumbnail_url($image_source_id, 'thumbnail');
+                        if (!$product_image && $variation_id) {
+                            $product_image = get_the_post_thumbnail_url($product_id, 'thumbnail');
+                        }
+                        $product_link = get_permalink($variation_id ?: $product_id);
 
                         $products_tracking[] = [
                             'product_id'      => $product_id,
+                            'variation_id'    => $variation_id ?: null,
                             'product_name'    => $product_name,
                             'tracking_number' => '',
                             'image_url'       => $product_image ?: '',
@@ -90,6 +130,7 @@ if (!empty($supplier_data)) {
                         ];
 
                         $all_fulfilled = false; // Not fully fulfilled if ungrouped exists
+                        break;
                     }
                 }
             }
