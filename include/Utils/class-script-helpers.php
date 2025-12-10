@@ -88,6 +88,7 @@ class ScriptHelpers
 
         if ($opts['withGlobalStore']) {
             $scripts[] = "$base/js/globalStore.js$ver";
+            $scripts[] = "$base/js/fetchClient.js$ver";
         }
 
         if ($opts['withPrimeVue']) {

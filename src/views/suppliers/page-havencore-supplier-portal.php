@@ -457,7 +457,7 @@
                     mobile: mobile,
                     isRtl: Rtl,
                     unreadSummary: null,
-                    unreadFetchInterval: null,
+                    unreadPoller: null,
                     carrierGroups: initialData.trackingCarriers || {},
                 };
             },
@@ -529,15 +529,22 @@
                         if (!this.shouldTrackUnread()) {
                             return;
                         }
-                        this.unreadFetchInterval = setInterval(() => {
-                            this.fetchUnreadSummary({ silent: true });
-                        }, 20000);
+                        if (!window.HavenCoreFetchClient?.create) {
+                            console.warn('HavenCoreFetchClient not available.');
+                            return;
+                        }
+                        this.unreadPoller = window.HavenCoreFetchClient.create({
+                            task: () => this.fetchUnreadSummary({ silent: true }),
+                            interval: 20000,
+                            runOnFocus: true
+                        });
+                        this.unreadPoller.start();
                     },
                     stopUnreadPolling() {
-                        if (this.unreadFetchInterval) {
-                            clearInterval(this.unreadFetchInterval);
-                            this.unreadFetchInterval = null;
+                        if (this.unreadPoller?.stop) {
+                            this.unreadPoller.stop();
                         }
+                        this.unreadPoller = null;
                     },
                     showUnreadBadge(item) {
                         return item.route === '/communications' && this.hasUnreadCommunications;
@@ -648,7 +655,7 @@
 
                         orders: [], // initially empty, will fetch from AJAX
                         ordersLoaded: false,
-                        ordersPollingJob: null,
+                        ordersPoller: null,
                         carrierGroups: initialData.trackingCarriers || {},
                         carrierOtherCode: 'OTHER',
 
@@ -2332,9 +2339,16 @@
                 mounted: async function () {
                     await this.fetchSupplierOrders();
 
-                    this.ordersPollingJob = setInterval(() => {
-                        this.fetchSupplierOrders(false, 1);
-                    }, 30000);
+                    if (window.HavenCoreFetchClient?.create) {
+                        this.ordersPoller = window.HavenCoreFetchClient.create({
+                            task: () => this.fetchSupplierOrders(false, 1),
+                            interval: 30000,
+                            runOnFocus: true
+                        });
+                        this.ordersPoller.start();
+                    } else {
+                        console.warn('HavenCoreFetchClient not available.');
+                    }
 
                     // Restore saved collapsed state from localStorage
                     const saved = localStorage.getItem('hc_supplier_portal_expanded_orders');
@@ -2355,8 +2369,8 @@
                     }
                 },
                 beforeUnmount() {
-                    if (this.ordersPollingJob) {
-                        clearInterval(this.ordersPollingJob);
+                    if (this.ordersPoller?.stop) {
+                        this.ordersPoller.stop();
                     }
                 },
                 watch: {
@@ -3110,7 +3124,7 @@
                         orderLoading: false,
                         orderError: null,
                         deleteLoading: false,
-                        autoRefreshInterval: null,
+                        autoRefreshPoller: null,
                         userLocale: navigator?.language || navigator?.userLanguage || 'en-US',
                         dateFormatOptions: { dateStyle: 'medium', timeStyle: 'short' },
                     };
@@ -3194,18 +3208,29 @@
                     },
                     startAutoRefresh() {
                         this.stopAutoRefresh();
-                        this.autoRefreshInterval = setInterval(async () => {
+                        if (!window.HavenCoreFetchClient?.create) {
+                            console.warn('HavenCoreFetchClient not available.');
+                            return;
+                        }
+
+                        const runner = async () => {
                             await this.fetchConversations({ silent: true });
                             if (this.selectedConversationId) {
                                 await this.fetchMessages(this.selectedConversationId, { silent: true, detectNew: true });
                             }
-                        }, 15000);
+                        };
+                        this.autoRefreshPoller = window.HavenCoreFetchClient.create({
+                            task: runner,
+                            interval: 15000,
+                            runOnFocus: true
+                        });
+                        this.autoRefreshPoller.start();
                     },
                     stopAutoRefresh() {
-                        if (this.autoRefreshInterval) {
-                            clearInterval(this.autoRefreshInterval);
-                            this.autoRefreshInterval = null;
+                        if (this.autoRefreshPoller?.stop) {
+                            this.autoRefreshPoller.stop();
                         }
+                        this.autoRefreshPoller = null;
                     },
                     async fetchConversations(options = {}) {
                         const { silent = false } = options;
