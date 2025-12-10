@@ -178,6 +178,8 @@
                 currentUser: initialData.currentUser || {},
                 unreadSummary: null,
                 unreadPoller: null,
+                unreadFetchInFlight: false,
+                unreadFetchQueued: null,
             };
         },
         provide() {
@@ -205,6 +207,17 @@
                     this.unreadSummary = null;
                     return;
                 }
+
+                if (this.unreadFetchInFlight) {
+                    this.unreadFetchQueued = {
+                        silent: true,
+                        force: this.unreadFetchQueued?.force || force,
+                    };
+                    return;
+                }
+
+                this.unreadFetchInFlight = true;
+
                 try {
                     const response = await wp.apiFetch({
                         path: '/hc/v1/communications/messaging/unread-summary',
@@ -216,6 +229,13 @@
                 } catch (err) {
                     if (!silent) {
                         console.error('Failed to fetch unread summary', err);
+                    }
+                } finally {
+                    this.unreadFetchInFlight = false;
+                    if (this.unreadFetchQueued) {
+                        const next = this.unreadFetchQueued;
+                        this.unreadFetchQueued = null;
+                        this.fetchUnreadSummary(next);
                     }
                 }
             },
@@ -229,8 +249,18 @@
                     return;
                 }
 
+                const pollTask = () => {
+                    if (!this.shouldTrackUnread()) {
+                        this.stopUnreadPolling();
+                        return;
+                    }
+                    this.fetchUnreadSummary({ silent: true });
+                };
+
+                pollTask();
+
                 this.unreadPoller = window.HavenCoreFetchClient.create({
-                    task: () => this.fetchUnreadSummary({ silent: true }),
+                    task: pollTask,
                     interval: 20000,
                     runOnFocus: true
                 });
@@ -255,7 +285,7 @@
             },
         },
         mounted() {
-            // Unread polling is triggered by the child shell once to avoid duplicate calls.
+            this.manageUnreadPolling();
         },
         beforeUnmount() {
             this.stopUnreadPolling();
@@ -581,7 +611,9 @@
                     if (idx !== -1) {
                         this.conversations[idx].unread_admin_count = 0;
                     }
-                    this.$root?.fetchUnreadSummary?.({ silent: true, force: true });
+                    if (this.$root?.shouldTrackUnread?.()) {
+                        this.$root.fetchUnreadSummary({ silent: true, force: true });
+                    }
                 } catch (err) {
                     console.error('Failed to mark conversation read', err);
                 }
