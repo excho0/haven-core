@@ -73,7 +73,7 @@ class ScriptHelpers
             'withFrontendCss' => false,
             'withMainStyle'   => true,
             'withFetchClient' => true,
-            'fetchClientDebug' => false,
+            'fetchClientDebug' => null,
         ];
 
         $opts   = array_merge($defaults, $options);
@@ -138,8 +138,13 @@ class ScriptHelpers
             $styles[] = "$base/css/primeicons/primeicons.css";
         }
 
+        $fetchClientDebug = $opts['fetchClientDebug'];
+        if ($fetchClientDebug === null) {
+            $fetchClientDebug = ($mode !== 'prod');
+        }
+
         if ($opts['withFetchClient']) {
-            self::loadFetchClient($opts['fetchClientDebug']);
+            self::loadFetchClient($fetchClientDebug);
         }
 
         // Output styles
