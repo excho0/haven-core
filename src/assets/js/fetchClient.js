@@ -3,6 +3,11 @@
 
     function noop() {}
 
+    const globalConfig = {
+        debug: !!(global.HavenCoreFetchClientConfig && global.HavenCoreFetchClientConfig.debug)
+    };
+    const instances = new Set();
+
     function FetchClient(config) {
         const opts = config || {};
         this.task = typeof opts.task === 'function' ? opts.task : noop;
@@ -11,12 +16,21 @@
             immediate: false,
             runOnFocus: true
         }, opts);
+        this.debug = typeof opts.debug === 'boolean' ? opts.debug : globalConfig.debug;
 
         this.timer = null;
         this.active = false;
         this.visibilityHandler = this.onVisibilityChange.bind(this);
         this.focusHandler = this.onFocus.bind(this);
+
+        instances.add(this);
     }
+
+    FetchClient.prototype.log = function (...args) {
+        if (this.debug) {
+            console.debug('[HavenCoreFetchClient]', ...args);
+        }
+    };
 
     FetchClient.prototype.safeRun = function () {
         try {
@@ -28,8 +42,10 @@
 
     FetchClient.prototype.onVisibilityChange = function () {
         if (document.hidden) {
+            this.log('document hidden -> pause');
             this.pause();
         } else if (this.active) {
+            this.log('document visible -> resume');
             if (this.options.runOnFocus !== false) {
                 this.safeRun();
             }
@@ -39,6 +55,7 @@
 
     FetchClient.prototype.onFocus = function () {
         if (!document.hidden && this.active) {
+            this.log('window focus -> resume');
             if (this.options.runOnFocus !== false) {
                 this.safeRun();
             }
@@ -50,6 +67,7 @@
         if (this.timer) {
             clearInterval(this.timer);
             this.timer = null;
+            this.log('polling paused');
         }
     };
 
@@ -57,6 +75,7 @@
         if (!this.active || document.hidden || this.timer) {
             return;
         }
+        this.log('polling resumed');
         this.timer = setInterval(() => {
             if (!document.hidden) {
                 this.safeRun();
@@ -77,6 +96,7 @@
         window.addEventListener('blur', this.visibilityHandler);
         window.addEventListener('focus', this.focusHandler);
 
+        this.log('poller started');
         if (!document.hidden && this.options.immediate) {
             this.safeRun();
         }
@@ -86,6 +106,7 @@
 
     FetchClient.prototype.stop = function () {
         if (!this.active) {
+            instances.delete(this);
             return;
         }
         this.active = false;
@@ -93,6 +114,8 @@
         document.removeEventListener('visibilitychange', this.visibilityHandler);
         window.removeEventListener('blur', this.visibilityHandler);
         window.removeEventListener('focus', this.focusHandler);
+        instances.delete(this);
+        this.log('poller stopped');
     };
 
     FetchClient.prototype.triggerNow = function () {
@@ -102,6 +125,15 @@
     global.HavenCoreFetchClient = {
         create(options) {
             return new FetchClient(options);
+        },
+        setDebug(value) {
+            globalConfig.debug = !!value;
+            instances.forEach(instance => {
+                instance.debug = globalConfig.debug;
+            });
+        },
+        getDebug() {
+            return globalConfig.debug;
         }
     };
 })(window);

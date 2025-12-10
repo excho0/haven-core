@@ -19,6 +19,8 @@ namespace HavenCore\Utils;
  */
 class ScriptHelpers
 {
+    private static bool $fetchClientLoaded = false;
+
     /**
      * Initializes wp-api-fetch and related dependencies manually.
      *
@@ -70,6 +72,8 @@ class ScriptHelpers
             'withPrimeIcons'  => true,
             'withFrontendCss' => false,
             'withMainStyle'   => true,
+            'withFetchClient' => true,
+            'fetchClientDebug' => false,
         ];
 
         $opts   = array_merge($defaults, $options);
@@ -88,7 +92,6 @@ class ScriptHelpers
 
         if ($opts['withGlobalStore']) {
             $scripts[] = "$base/js/globalStore.js$ver";
-            $scripts[] = "$base/js/fetchClient.js$ver";
         }
 
         if ($opts['withPrimeVue']) {
@@ -135,6 +138,10 @@ class ScriptHelpers
             $styles[] = "$base/css/primeicons/primeicons.css";
         }
 
+        if ($opts['withFetchClient']) {
+            self::loadFetchClient($opts['fetchClientDebug']);
+        }
+
         // Output styles
         foreach ($styles as $style) {
             echo '<link rel="stylesheet" href="' . esc_url($style) . '">' . "\n";
@@ -146,6 +153,26 @@ class ScriptHelpers
         }
 
         echo "<!-- 🧩 Vue app initialized in {$mode} mode -->\n";
+    }
+
+    public static function loadFetchClient(bool $debug = false): void
+    {
+        if (self::$fetchClientLoaded) {
+            return;
+        }
+
+        self::$fetchClientLoaded = true;
+
+        $base = rtrim(HAVEN_CORE_URL, '/') . '/assets';
+        $debugFlag = $debug ? 'true' : 'false';
+        echo <<<HTML
+<script>
+    window.HavenCoreFetchClientConfig = window.HavenCoreFetchClientConfig || {};
+    window.HavenCoreFetchClientConfig.debug = {$debugFlag};
+</script>
+HTML;
+        $script = $base . '/js/fetchClient.js';
+        echo '<script src="' . esc_url($script) . '"></script>' . "\n";
     }
 
 
