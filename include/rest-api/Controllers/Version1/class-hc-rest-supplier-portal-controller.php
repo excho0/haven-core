@@ -540,7 +540,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			return new WP_Error( 'order_not_found', 'Order not found', [ 'status' => 404 ] );
 		}
 
-		$supplier_data = get_post_meta( $order_id, '_supplier_data', true );
+		$supplier_data = $order->get_meta( '_supplier_data', true );
 		if ( empty( $supplier_data ) || ! isset( $supplier_data[ $supplier_id ] ) ) {
 			return new WP_Error( 'supplier_data_not_found', 'Supplier data not found', [ 'status' => 404 ] );
 		}
@@ -555,15 +555,38 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 
 		// Ungrouped products
 		$ungrouped_products = [];
+		// Build a map of existing quantities to preserve when client omits quantity
+		$existing_ungrouped = isset( $supplier_data[ $supplier_id ]['ungrouped_products'] ) && is_array( $supplier_data[ $supplier_id ]['ungrouped_products'] )
+			? $supplier_data[ $supplier_id ]['ungrouped_products']
+			: [];
+		$existing_qty_map = [];
+		foreach ( $existing_ungrouped as $e ) {
+			$epid = isset( $e['product_id'] ) ? (int) $e['product_id'] : 0;
+			$evid = isset( $e['variation_id'] ) ? (int) $e['variation_id'] : 0;
+			if ( ! $epid ) { continue; }
+			$existing_qty_map[ $epid . ':' . $evid ] = isset( $e['quantity'] ) ? (int) $e['quantity'] : 0;
+		}
 		if ( ! empty( $metadata['ungrouped_products'] ) ) {
 			foreach ( $metadata['ungrouped_products'] as $prod ) {
 				$pid = isset( $prod['product_id'] ) ? (int) $prod['product_id'] : null;
 				if ( ! $pid ) continue;
 
+				$vid = isset( $prod['variation_id'] ) ? (int) $prod['variation_id'] : 0;
+				$qty = isset( $prod['quantity'] ) ? (int) $prod['quantity'] : 0;
+				if ( $qty <= 0 ) {
+					$k = $pid . ':' . $vid;
+					if ( isset( $existing_qty_map[ $k ] ) && (int) $existing_qty_map[ $k ] > 0 ) {
+						$qty = (int) $existing_qty_map[ $k ];
+					} else {
+						$order_item = $this->find_matching_order_item( $order, (int) $pid, (int) $vid );
+						$qty = $order_item ? (int) $order_item->get_quantity() : 1;
+					}
+				}
+
 				$ungrouped_products[] = [
 					'product_id'   => $pid,
-					'variation_id' => isset( $prod['variation_id'] ) ? (int) $prod['variation_id'] : null,
-					'quantity'     => isset( $prod['quantity'] ) ? max( 1, (int) $prod['quantity'] ) : 1,
+					'variation_id' => $vid ?: null,
+					'quantity'     => max( 1, (int) $qty ),
 					'note'         => sanitize_textarea_field( $prod['note'] ?? '' ),
 				];
 			}
@@ -572,6 +595,9 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		// Grouped products
 		$grouped_products = [];
 		$tracking_meta = [];
+		$existing_grouped = isset( $supplier_data[ $supplier_id ]['grouped_products'] ) && is_array( $supplier_data[ $supplier_id ]['grouped_products'] )
+			? $supplier_data[ $supplier_id ]['grouped_products']
+			: [];
 		if ( ! empty( $metadata['grouped_products'] ) ) {
 			foreach ( $metadata['grouped_products'] as $group ) {
 				$tracking = sanitize_text_field( $group['tracking_number'] ?? '' );
@@ -590,9 +616,26 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 					$pid = isset( $prod['product_id'] ) ? (int) $prod['product_id'] : null;
 					if ( ! $pid ) continue;
 
+					$vid = isset( $prod['variation_id'] ) ? (int) $prod['variation_id'] : 0;
+					$qty = isset( $prod['quantity'] ) ? (int) $prod['quantity'] : 0;
+					if ( $qty <= 0 ) {
+						$prev = $existing_grouped[ $tracking ][ $pid ] ?? null;
+						if ( is_array( $prev ) ) {
+							$prev_vid = isset( $prev['variation_id'] ) ? (int) $prev['variation_id'] : 0;
+							$prev_qty = isset( $prev['quantity'] ) ? (int) $prev['quantity'] : 0;
+							if ( $prev_qty > 0 && $prev_vid === $vid ) {
+								$qty = $prev_qty;
+							}
+						}
+						if ( $qty <= 0 ) {
+							$order_item = $this->find_matching_order_item( $order, (int) $pid, (int) $vid );
+							$qty = $order_item ? (int) $order_item->get_quantity() : 1;
+						}
+					}
+
 					$grouped_products[ $tracking ][ $pid ] = [
-						'variation_id' => isset( $prod['variation_id'] ) ? (int) $prod['variation_id'] : null,
-						'quantity'     => isset( $prod['quantity'] ) ? max( 1, (int) $prod['quantity'] ) : 1,
+						'variation_id' => $vid ?: null,
+						'quantity'     => max( 1, (int) $qty ),
 						'note'         => sanitize_textarea_field( $prod['note'] ?? '' ),
 					];
 				}
@@ -624,7 +667,8 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			$supplier_data[ $supplier_id ]['fulfillment_status'] = 'pending';
 		}
 
-		update_post_meta( $order_id, '_supplier_data', $supplier_data );
+		$order->update_meta_data( '_supplier_data', $supplier_data );
+		$order->save();
 
 		return new WP_REST_Response( [
 			'message'            => 'Order saved successfully',
@@ -649,7 +693,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			return new WP_Error( 'order_not_found', 'Order not found', [ 'status' => 404 ] );
 		}
 
-		$supplier_data = get_post_meta( $order_id, '_supplier_data', true );
+		$supplier_data = $order->get_meta( '_supplier_data', true );
 		if ( empty( $supplier_data[ $supplier_id ] ) ) {
 			return new WP_Error( 'supplier_data_missing', 'No supplier data found.', [ 'status' => 404 ] );
 		}
@@ -657,7 +701,8 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		$settings = new HC_Settings();
 
 		$supplier_data[ $supplier_id ]['fulfillment_status'] = 'fulfilled';
-		update_post_meta( $order_id, '_supplier_data', $supplier_data );
+		$order->update_meta_data( '_supplier_data', $supplier_data );
+		$order->save();
 
 		// Optional: AST integration
 		if ( function_exists( 'ast_add_tracking_number' ) || function_exists( 'ast_insert_tracking_number' ) ) {
@@ -733,28 +778,32 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			return new WP_Error( 'order_not_found', 'Order not found', [ 'status' => 404 ] );
 		}
 
-		$supplier_data = get_post_meta( $order_id, '_supplier_data', true );
+		$supplier_data = $order->get_meta( '_supplier_data', true );
 		if ( empty( $supplier_data ) || empty( $supplier_data[ $supplier_id ] ) ) {
 			return new WP_Error( 'supplier_data_missing', 'No supplier data found.', [ 'status' => 404 ] );
 		}
 
-		// Rebuild ungrouped products from order items that belong to this supplier
-        $rebuilt_ungrouped = [];
-        foreach ( $order->get_items() as $item ) {
-            if ( ! ( $item instanceof \WC_Order_Item_Product ) ) {
-                continue;
-            }
-            $pid = (int) $item->get_product_id();
-            if ( ! $pid ) continue;
+		// Rebuild ungrouped products from order items that belong to this supplier (precise)
+		$rebuilt_ungrouped = [];
+		foreach ( $order->get_items() as $item ) {
+			if ( ! ( $item instanceof \WC_Order_Item_Product ) ) { continue; }
+			$pid = (int) $item->get_product_id();
+				if ( ! $pid ) { continue; }
+				$vid = method_exists( $item, 'get_variation_id' ) ? (int) $item->get_variation_id() : 0;
 
-            $assigned_supplier = (int) get_post_meta( $pid, '_supplier_id', true );
-            if ( $assigned_supplier && $assigned_supplier === $supplier_id ) {
-                $rebuilt_ungrouped[] = [
-                    'product_id' => $pid,
-                    'note'       => '',
-                ];
-            }
-        }
+				// Prefer variation supplier assignment; fallback to parent product
+				$assigned = 0;
+				if ( $vid ) { $assigned = (int) get_post_meta( $vid, '_supplier_id', true ); }
+				if ( ! $assigned ) { $assigned = (int) get_post_meta( $pid, '_supplier_id', true ); }
+				if ( $assigned !== $supplier_id ) { continue; }
+
+				$rebuilt_ungrouped[] = [
+					'product_id'   => $pid,
+					'variation_id' => $vid ?: null,
+					'quantity'     => (int) $item->get_quantity(),
+					'note'         => '',
+				];
+			}
 
         $supplier_data[ $supplier_id ]['ungrouped_products'] = $rebuilt_ungrouped;
         $supplier_data[ $supplier_id ]['grouped_products']   = [];
@@ -762,7 +811,8 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
         $supplier_data[ $supplier_id ]['fulfillment_status'] = 'pending';
         $supplier_data[ $supplier_id ]['date_modified']      = current_time('Y-m-d\TH:i:s\Z');
 
-		update_post_meta( $order_id, '_supplier_data', $supplier_data );
+		$order->update_meta_data( '_supplier_data', $supplier_data );
+		$order->save();
 
 		return new WP_REST_Response( [
 			'message' => 'Supplier fulfillment reset.',
@@ -964,7 +1014,8 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		$filtered_orders = [];
 
 		foreach ( $assigned_orders as $order_id ) {
-			$data = get_post_meta( $order_id, '_supplier_data', true );
+			$order_tmp = wc_get_order( $order_id );
+			$data = $order_tmp ? $order_tmp->get_meta( '_supplier_data', true ) : [];
 			$status = $data[ $supplier_id ]['fulfillment_status'] ?? 'pending';
 
 			if ( $status_filter !== 'all' && strtolower( $status ) !== strtolower( $status_filter ) ) {
@@ -1036,8 +1087,10 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		// Sorting
 		$sort_order = strtolower( $request->get_param( 'sort' ) ?? 'desc' );
 		usort( $filtered_orders, function ( $a, $b ) use ( $sort_order ) {
-			$timeA = strtotime( get_post( $a )->post_date ?? '' );
-			$timeB = strtotime( get_post( $b )->post_date ?? '' );
+			$oa = wc_get_order( $a );
+			$ob = wc_get_order( $b );
+			$timeA = ( $oa && $oa->get_date_created() ) ? (int) $oa->get_date_created()->getTimestamp() : 0;
+			$timeB = ( $ob && $ob->get_date_created() ) ? (int) $ob->get_date_created()->getTimestamp() : 0;
 			return ( $sort_order === 'asc' ) ? $timeA - $timeB : $timeB - $timeA;
 		} );
 
@@ -1055,53 +1108,67 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			$order = wc_get_order( $order_id );
 			if ( ! $order ) continue;
 
-			$data = get_post_meta( $order_id, '_supplier_data', true );
+			$data = $order->get_meta( '_supplier_data', true );
 			$supplier_status = $data[ $supplier_id ]['fulfillment_status'] ?? 'pending';
 			$tracking_meta = $data[ $supplier_id ]['tracking_groups_meta'] ?? [];
 
-			// Calculate supplier earnings total for this order using supplier_price meta
+			// Calculate supplier total strictly from supplier meta (ungrouped + grouped)
 			$supplier_total = 0.0;
-			foreach ( $order->get_items() as $item ) {
-				if ( ! ( $item instanceof \WC_Order_Item_Product ) ) {
-					continue;
-				}
-				$pid = (int) $item->get_product_id();
-				$vid = method_exists( $item, 'get_variation_id' ) ? (int) $item->get_variation_id() : 0;
-				if ( ! $pid && ! $vid ) { continue; }
-
-				// Prefer variation over parent when available
-				$subject_ids = [];
-				if ( $vid ) { $subject_ids[] = $vid; }
-				if ( $pid ) { $subject_ids[] = $pid; }
-
-				// Determine assignment: variation _supplier_id first, then parent
-				$assigned_supplier = 0;
-				foreach ( $subject_ids as $sid ) {
-					$val = get_post_meta( $sid, '_supplier_id', true );
-					if ( $val !== '' && $val !== null ) { $assigned_supplier = (int) $val; break; }
-				}
-				if ( ! $assigned_supplier || $assigned_supplier !== $supplier_id ) {
-					continue; // item not belonging to current supplier
-				}
-
-				// Determine supplier price: variation _supplier_price first, then parent
-				$sp_val = 0.0;
-				foreach ( $subject_ids as $sid ) {
+			$calc_price = function( int $product_id, int $variation_id ) : float {
+				$ids = [];
+				if ( $variation_id ) { $ids[] = $variation_id; }
+				if ( $product_id ) { $ids[] = $product_id; }
+				foreach ( $ids as $sid ) {
 					$sp_raw = get_post_meta( $sid, '_supplier_price', true );
 					if ( $sp_raw === '' || $sp_raw === null ) { continue; }
-					$sp_norm = is_string( $sp_raw )
-						? str_replace( ',', '.', preg_replace( '/[^0-9\.,-]/', '', $sp_raw ) )
-						: (string) $sp_raw;
-					if ( is_numeric( $sp_norm ) ) { $sp_val = (float) $sp_norm; break; }
+					$sp_norm = is_string( $sp_raw ) ? str_replace( ',', '.', preg_replace( '/[^0-9\.,-]/', '', $sp_raw ) ) : (string) $sp_raw;
+					if ( is_numeric( $sp_norm ) ) { return max( 0.0, (float) $sp_norm ); }
 				}
+				return 0.0;
+			};
 
-				$qty = (int) $item->get_quantity();
-				$supplier_total += max( 0, $sp_val ) * max( 0, $qty );
+			$ungrouped_source = $data[ $supplier_id ]['ungrouped_products'] ?? [];
+			foreach ( $ungrouped_source as $entry ) {
+				$pid = isset( $entry['product_id'] ) ? (int) $entry['product_id'] : 0;
+				$vid = isset( $entry['variation_id'] ) ? (int) $entry['variation_id'] : 0;
+				$qty = isset( $entry['quantity'] ) ? (int) $entry['quantity'] : 0;
+				if ( ! $vid ) {
+					$order_item = $this->find_matching_order_item( $order, $pid, $vid );
+					if ( $order_item && $order_item->get_variation_id() ) {
+						$vid = (int) $order_item->get_variation_id();
+					}
+				}
+				if ( $qty <= 0 ) {
+					$order_item = $this->find_matching_order_item( $order, $pid, $vid );
+					$qty = $order_item ? (int) $order_item->get_quantity() : 0;
+				}
+				$supplier_total += $calc_price( $pid, $vid ) * max( 0, $qty );
+			}
+
+			foreach ( ( $data[ $supplier_id ]['grouped_products'] ?? [] ) as $tracking => $products ) {
+				$current_products = isset( $products['products'] ) ? $products['products'] : $products;
+				foreach ( $current_products as $pid => $info ) {
+					$pid = (int) $pid;
+					$vid = isset( $info['variation_id'] ) ? (int) $info['variation_id'] : 0;
+					$qty = isset( $info['quantity'] ) ? (int) $info['quantity'] : 0;
+					if ( ! $vid ) {
+						$order_item = $this->find_matching_order_item( $order, $pid, $vid );
+						if ( $order_item && $order_item->get_variation_id() ) {
+							$vid = (int) $order_item->get_variation_id();
+						}
+					}
+					if ( $qty <= 0 ) {
+						$order_item = $this->find_matching_order_item( $order, $pid, $vid );
+						$qty = $order_item ? (int) $order_item->get_quantity() : 0;
+					}
+					$supplier_total += $calc_price( $pid, $vid ) * max( 0, $qty );
+				}
 			}
 
 			// Ungrouped products
 			$ungrouped = [];
-			foreach ( $data[ $supplier_id ]['ungrouped_products'] ?? [] as $entry ) {
+			$ungrouped_source = $data[ $supplier_id ]['ungrouped_products'] ?? [];
+			foreach ( $ungrouped_source as $entry ) {
 				$product_id   = isset( $entry['product_id'] ) ? (int) $entry['product_id'] : 0;
 				if ( ! $product_id ) {
 					continue;
@@ -1129,10 +1196,21 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 					$thumbnail = get_the_post_thumbnail_url( $product_id, 'thumbnail' ) ?: '';
 				}
 
+				// Keep product_name without variation suffix for variations
+				$base_name = 'Unknown';
+				if ( $product ) {
+					if ( $variation_id && method_exists( $product, 'get_parent_id' ) ) {
+						$parent = wc_get_product( (int) $product->get_parent_id() );
+						$base_name = $parent ? $parent->get_name() : $product->get_name();
+					} else {
+						$base_name = $product->get_name();
+					}
+				}
+
 				$ungrouped[] = [
 					'product_id'   => $product_id,
 					'variation_id' => $variation_id ?: null,
-					'product_name' => $product ? $product->get_name() : 'Unknown',
+					'product_name' => $base_name,
 					'variation'    => $variation_text,
 					'note'         => $entry['note'] ?? '',
 					'sku'          => $product ? $product->get_sku() : '',
@@ -1176,10 +1254,21 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 						$thumbnail = get_the_post_thumbnail_url( $pid, 'thumbnail' ) ?: '';
 					}
 
+					// Keep product_name without variation suffix for variations
+					$base_name = 'Unknown';
+					if ( $product ) {
+						if ( $variation_id && method_exists( $product, 'get_parent_id' ) ) {
+							$parent = wc_get_product( (int) $product->get_parent_id() );
+							$base_name = $parent ? $parent->get_name() : $product->get_name();
+						} else {
+							$base_name = $product->get_name();
+						}
+					}
+
 					$list[] = [
 						'product_id'   => $pid,
 						'variation_id' => $variation_id ?: null,
-						'product_name' => $product ? $product->get_name() : 'Unknown',
+						'product_name' => $base_name,
 						'variation'    => $variation_text,
 						'note'         => $info['note'] ?? '',
 						'sku'          => $product ? $product->get_sku() : '',
@@ -1194,6 +1283,21 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 					'carrier_name_other'  => $meta['carrier_name_other'] ?? '',
 					'products'            => $list
 				];
+			}
+
+			// Remove ungrouped entries that appear in grouped (dedupe by product_id:variation_id)
+			if ( ! empty( $grouped ) && ! empty( $ungrouped ) ) {
+				$gkeys = [];
+				foreach ( $grouped as $grp ) {
+					foreach ( $grp['products'] as $gp ) {
+						$k = ((int) $gp['product_id']) . ':' . ((int) ( $gp['variation_id'] ?? 0 ));
+						$gkeys[ $k ] = true;
+					}
+				}
+				$ungrouped = array_values( array_filter( $ungrouped, function( $u ) use ( $gkeys ) {
+					$k = ((int) $u['product_id']) . ':' . ((int) ( $u['variation_id'] ?? 0 ));
+					return empty( $gkeys[ $k ] );
+				} ) );
 			}
 
 			$supplier_total_formatted = wc_price( $supplier_total );
@@ -1454,7 +1558,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			return new WP_Error( 'order_not_found', 'Order not found.', [ 'status' => 404 ] );
 		}
 
-		$supplier_data = get_post_meta( $order_id, '_supplier_data', true );
+		$supplier_data = $order->get_meta( '_supplier_data', true );
 		if ( empty( $supplier_data ) || ! is_array( $supplier_data ) || ! isset( $supplier_data[ $from_id ] ) ) {
 			return new WP_Error( 'source_missing', 'Source supplier data not found on this order.', [ 'status' => 400 ] );
 		}
@@ -1481,7 +1585,11 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			$new_data[ $sid ] = $entry;
 		}
 
-		update_post_meta( $order_id, '_supplier_data', $new_data );
+		$order = wc_get_order( $order_id );
+		if ( $order ) {
+			$order->update_meta_data( '_supplier_data', $new_data );
+			$order->save();
+		}
 
 		$service = new HC_Supplier_Service();
 		$service->unassign_order( $from_id, $order_id );
@@ -1493,7 +1601,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 	}
 
 	private function build_supplier_cards( \WC_Order $order ): array {
-		$supplier_data = get_post_meta( $order->get_id(), '_supplier_data', true );
+		$supplier_data = $order->get_meta( '_supplier_data', true );
 		if ( empty( $supplier_data ) || ! is_array( $supplier_data ) ) {
 			return [];
 		}
@@ -1723,25 +1831,51 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		foreach ( $meta_data as $meta ) {
 			$meta_key   = method_exists( $meta, 'get_data' ) ? ( $meta->get_data()['key'] ?? '' ) : ( $meta->key ?? '' );
 			$meta_value = method_exists( $meta, 'get_data' ) ? ( $meta->get_data()['value'] ?? '' ) : ( $meta->value ?? '' );
-			if ( '' === $meta_value ) {
-				continue;
-			}
+			if ( $meta_value === '' || $meta_value === null ) { continue; }
+			// Exclude system/internal metas
+			if ( is_string( $meta_key ) && strlen( $meta_key ) > 0 && $meta_key[0] === '_' ) { continue; }
 
-			$label_source = '';
+			$label = '';
+			// attribute_{taxonomy or name}
 			if ( strpos( $meta_key, 'attribute_' ) === 0 ) {
-				$label_source = wc_attribute_label( str_replace( 'attribute_', '', $meta_key ) );
+				$label = wc_attribute_label( str_replace( 'attribute_', '', $meta_key ) );
+			// Global attribute taxonomy keys on some setups (pa_*)
+			} elseif ( strpos( $meta_key, 'pa_' ) === 0 ) {
+				$label = wc_attribute_label( $meta_key );
+			// Custom attribute keys (non-underscore)
 			} else {
-				$label_source = $meta_key;
+				$label = $meta_key;
 			}
 
-			$label = sanitize_text_field( wp_strip_all_tags( $label_source ) );
-			if ( ! $label ) {
-				$label = ucwords( str_replace( [ 'attribute_', '_', '-' ], ' ', $meta_key ) );
-			}
-			$value = sanitize_text_field( wp_strip_all_tags( $meta_value ) );
-
+			$label = sanitize_text_field( wp_strip_all_tags( (string) $label ) );
+			$value = sanitize_text_field( wp_strip_all_tags( is_scalar( $meta_value ) ? (string) $meta_value : wp_json_encode( $meta_value ) ) );
 			if ( $label && $value ) {
 				$parts[] = $label . ': ' . $value;
+			}
+		}
+
+		// Fallback: if no order-item meta attributes found, use the variation product attributes
+		if ( empty( $parts ) ) {
+			$variation_id = method_exists( $item, 'get_variation_id' ) ? (int) $item->get_variation_id() : 0;
+			if ( $variation_id ) {
+				$variation = wc_get_product( $variation_id );
+				if ( $variation ) {
+					$attrs = method_exists( $variation, 'get_attributes' ) ? (array) $variation->get_attributes() : [];
+					foreach ( $attrs as $akey => $aval ) {
+						if ( ! is_string( $akey ) || $akey === '' ) { continue; }
+						$label = '';
+						if ( strpos( $akey, 'pa_' ) === 0 ) {
+							$label = wc_attribute_label( $akey );
+						} else {
+							$label = $akey;
+						}
+						$label = sanitize_text_field( wp_strip_all_tags( (string) $label ) );
+						$value = sanitize_text_field( wp_strip_all_tags( is_scalar( $aval ) ? (string) $aval : wp_json_encode( $aval ) ) );
+						if ( $label && $value ) {
+							$parts[] = $label . ': ' . $value;
+						}
+					}
+				}
 			}
 		}
 

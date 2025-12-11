@@ -91,10 +91,19 @@ class LifecycleManager
         // Remove the custom supplier role
         remove_role('supplier');
 
-        // Delete post meta related to suppliers
-        delete_post_meta_by_key('_supplier_data');
-        delete_post_meta_by_key('_supplier_data_created');
-        delete_post_meta_by_key('_supplier_email_action_id');
+        // Delete order meta related to suppliers (HPOS-safe)
+        $orders = wc_get_orders([
+            'limit'  => -1,
+            'return' => 'ids',
+        ]);
+        foreach ((array) $orders as $oid) {
+            $order = wc_get_order($oid);
+            if (!$order) { continue; }
+            $order->delete_meta_data('_supplier_data');
+            $order->delete_meta_data('_supplier_data_created');
+            $order->delete_meta_data('_supplier_email_action_id');
+            $order->save();
+        }
 
         
         PageUtils::deletePageIfExists('goodbye');

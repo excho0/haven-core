@@ -4,7 +4,8 @@ use \HavenCore\Services\HC_Supplier_Service;
 
 // Get the order ID and the supplier data from the order's meta
 $order_id = is_numeric($order) ? $order : $order->get_id();
-$supplier_data = get_post_meta($order_id, '_supplier_data', true);
+$order_obj = wc_get_order($order_id);
+$supplier_data = $order_obj ? $order_obj->get_meta('_supplier_data', true) : [];
 
 if (empty($supplier_data)) {
     echo '<small style="color:#999;">—</small>';

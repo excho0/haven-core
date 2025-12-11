@@ -14,7 +14,7 @@ if ($post instanceof WC_Order) {
     $order = $order_id ? wc_get_order($order_id) : null;
 }
 
-$supplier_data = get_post_meta($order_id, '_supplier_data', true) ?: [];
+$supplier_data = $order ? $order->get_meta('_supplier_data', true) : [];
 $tracking_carriers = Tracking_Carriers::get_carrier_groups();
 
 ScriptHelpers::loadVue([
@@ -90,7 +90,8 @@ $format_product = static function (int $product_id, int $qty, ?int $variation_id
     }
 
     if ($product && $product->is_type('variation')) {
-        $variation_text = wc_get_formatted_variation($product, true, false, false);
+        // Include attribute labels in the formatted variation string
+        $variation_text = wc_get_formatted_variation($product, true, true, false);
         if ($variation_text) {
             $variation = sanitize_text_field(
                 wp_strip_all_tags(html_entity_decode($variation_text, ENT_QUOTES, get_bloginfo('charset')))
@@ -105,23 +106,30 @@ $format_product = static function (int $product_id, int $qty, ?int $variation_id
             $meta_data = $meta->get_data();
             $meta_key = $meta_data['key'] ?? '';
             $meta_value = $meta_data['value'] ?? '';
-            if ($meta_value === '') {
+            if ($meta_value === '' || $meta_value === null) {
                 continue;
             }
 
-            $label_source = '';
+            // Exclude internal/system keys
+            if (is_string($meta_key) && $meta_key !== '' && $meta_key[0] === '_') {
+                continue;
+            }
+
+            // Derive a human label
             if (strpos($meta_key, 'attribute_') === 0) {
                 $label_source = wc_attribute_label(str_replace('attribute_', '', $meta_key));
+            } elseif (strpos($meta_key, 'pa_') === 0) {
+                $label_source = wc_attribute_label($meta_key);
             } else {
                 $label_source = $meta_key;
             }
 
-            $label = sanitize_text_field(wp_strip_all_tags($label_source));
+            $label = sanitize_text_field(wp_strip_all_tags((string) $label_source));
             if (!$label) {
-                $label = ucwords(str_replace(['attribute_', '_', '-'], ' ', $meta_key));
+                $label = ucwords(str_replace(['attribute_', '_', '-'], ' ', (string) $meta_key));
             }
 
-            $value = sanitize_text_field(wp_strip_all_tags($meta_value));
+            $value = sanitize_text_field(wp_strip_all_tags(is_scalar($meta_value) ? (string) $meta_value : wp_json_encode($meta_value)));
             if ($label && $value) {
                 $variation_parts[] = sprintf('%s: %s', $label, $value);
             }
@@ -129,6 +137,27 @@ $format_product = static function (int $product_id, int $qty, ?int $variation_id
 
         if (!empty($variation_parts)) {
             $variation = implode(', ', $variation_parts);
+        }
+    }
+
+    // Fallback: if still empty, try variation product attributes
+    if (!$variation && $variation_id) {
+        $variation_product = wc_get_product($variation_id);
+        if ($variation_product && method_exists($variation_product, 'get_attributes')) {
+            $attrs = (array) $variation_product->get_attributes();
+            $parts = [];
+            foreach ($attrs as $akey => $aval) {
+                if (!is_string($akey) || $akey === '') { continue; }
+                $label = (strpos($akey, 'pa_') === 0) ? wc_attribute_label($akey) : $akey;
+                $label = sanitize_text_field(wp_strip_all_tags((string) $label));
+                $value = sanitize_text_field(wp_strip_all_tags(is_scalar($aval) ? (string) $aval : wp_json_encode($aval)));
+                if ($label && $value) {
+                    $parts[] = sprintf('%s: %s', $label, $value);
+                }
+            }
+            if (!empty($parts)) {
+                $variation = implode(', ', $parts);
+            }
         }
     }
 

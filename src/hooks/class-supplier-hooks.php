@@ -418,7 +418,8 @@ class SupplierHooks
     public static function handle_reset_supplier_fulfillment_and_order_status($order_id, $tracking_number) {
         // error_log("🔍 Starting reset process for Order ID: {$order_id} and Tracking Number: {$tracking_number}");
 
-        $supplier_data = get_post_meta($order_id, '_supplier_data', true);
+        $order = wc_get_order($order_id);
+        $supplier_data = $order ? $order->get_meta('_supplier_data', true) : [];
 
         if (empty($supplier_data) || !is_array($supplier_data)) {
             // error_log("⚠️ No supplier data found or data is not an array for Order ID: {$order_id}.");
@@ -508,7 +509,8 @@ class SupplierHooks
                 // error_log("🔄 Some suppliers are still fulfilled. Order status set to processing.");
             }
 
-            update_post_meta($order_id, '_supplier_data', $updated_supplier_data);
+            $order->update_meta_data('_supplier_data', $updated_supplier_data);
+            $order->save();
             // error_log("✅ Supplier data updated successfully for Order ID: {$order_id}: " . print_r($updated_supplier_data, true));
         } else {
             // error_log("ℹ️ No matching tracking number found to delete for Order ID: {$order_id}.");

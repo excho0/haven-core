@@ -38,8 +38,9 @@ class Orders
     private static function log(string $message, int $action_id = 0, int $order_id = 0): void
     {
         if (!$action_id && $order_id) {
-            // Try to load action_id from post meta if not directly passed
-            $stored_action_id = get_post_meta($order_id, '_supplier_email_action_id', true);
+            // Try to load action_id from order meta if not directly passed
+            $order = wc_get_order($order_id);
+            $stored_action_id = $order ? $order->get_meta('_supplier_email_action_id', true) : '';
             if ($stored_action_id) {
                 $action_id = (int) $stored_action_id;
             }
@@ -111,7 +112,11 @@ class Orders
                 'hc-assign-orders-to-suppliers' // <-- Action group name
             );            
             self::log("✅ [ActionScheduler] Enqueued supplier job for order $order_id, action ID: $action_id", $action_id, $order_id);
-            update_post_meta($order_id, '_supplier_email_action_id', $action_id);
+            $order = wc_get_order($order_id);
+            if ($order) {
+                $order->update_meta_data('_supplier_email_action_id', $action_id);
+                $order->save();
+            }
         } else {
             wp_schedule_single_event(time() + 10, 'havencore_supplier_order_assignment', [$order_id]);
             self::log("⚠️ Action Scheduler not found. Falling back to wp_schedule_single_event for order $order_id", 0, $order_id);
@@ -161,7 +166,7 @@ class Orders
             return;
         }
     
-        if (get_post_meta($order_id, '_supplier_data_created', true)) {
+        if ($order->get_meta('_supplier_data_created', true)) {
             self::log("✅ Order $order_id already marked as processed. Skipping.", 0, $order_id);
             return;
         }
@@ -225,9 +230,10 @@ class Orders
             self::send_supplier_email($order, $supplier_id, $supplier_data);
         }
     
-        update_post_meta($order_id, '_supplier_data', $suppliers);
-        update_post_meta($order_id, '_supplier_data_created', true);
-        delete_post_meta($order_id, '_supplier_email_action_id'); // ✅ cleanup
+        $order->update_meta_data('_supplier_data', $suppliers);
+        $order->update_meta_data('_supplier_data_created', true);
+        $order->delete_meta_data('_supplier_email_action_id'); // ✅ cleanup
+        $order->save();
         self::log("✅ Supplier data marked as created for order $order_id", 0, $order_id);
     }
 
@@ -245,7 +251,7 @@ class Orders
             return;
         }
 
-        $supplier_data = get_post_meta($order_id, '_supplier_data', true);
+        $supplier_data = $order->get_meta('_supplier_data', true);
         $segment       = [];
 
         if (is_array($supplier_data) && isset($supplier_data[$supplier_id]) && is_array($supplier_data[$supplier_id])) {

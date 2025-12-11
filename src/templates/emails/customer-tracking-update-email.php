@@ -24,8 +24,8 @@ if (!$order) {
     return;
 }
 
-// Load supplier data from the order
-$supplier_data = get_post_meta($order_id, '_supplier_data', true);
+// Load supplier data from the order (HPOS-safe)
+$supplier_data = $order->get_meta('_supplier_data', true);
 
 // Initialize
 $products_tracking = [];
