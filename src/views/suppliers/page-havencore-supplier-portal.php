@@ -186,6 +186,7 @@
         <script type="application/json" id="app-initial-data">
             <?= json_encode([
                 'trackingCarriers' => $tracking_carriers,
+                'loginUrl'        => wp_login_url($_SERVER['REQUEST_URI']),
                 'i18n' => [
 
                     // ─── General UI ───────────────────────────────
@@ -346,6 +347,60 @@
             // console.log('currentUser inital Data:', currentUser);
             
             const initialData = JSON.parse(document.getElementById('app-initial-data')?.textContent || '{}');
+            const portalLoginUrl = initialData.loginUrl || <?= json_encode(wp_login_url($_SERVER['REQUEST_URI'])); ?>;
+
+            const redirectToLogin = () => {
+                const targetRoute = window.location.hash ? window.location.hash.replace(/^#/, '') : '/orders';
+                const targetUrl = new URL(window.location.href);
+                targetUrl.hash = targetRoute.startsWith('#') ? targetRoute : '#' + targetRoute.replace(/^\/?/, '/');
+
+                if (portalLoginUrl) {
+                    const url = new URL(portalLoginUrl, window.location.origin);
+                    url.searchParams.set('redirect_to', targetUrl.toString());
+                    window.location.href = url.toString();
+                } else {
+                    window.location.href = targetUrl.toString();
+                }
+            };
+
+            const shouldRedirectForAuthError = (error) => {
+                const code = (error?.code || error?.data?.code || '').toString();
+                const status = error?.status || error?.data?.status;
+                const message = (error?.message || error?.data?.message || '').toLowerCase();
+
+                if (code === 'rest_cookie_invalid_nonce' || code === 'rest_not_logged_in') {
+                    return true;
+                }
+
+                if (status === 401) {
+                    return true;
+                }
+
+                if (status === 403) {
+                    if (
+                        code === 'rest_cookie_invalid_nonce' ||
+                        code === 'rest_not_logged_in' ||
+                        message.includes('cookie') ||
+                        message.includes('logged in') ||
+                        message.includes('nonce')
+                    ) {
+                        return true;
+                    }
+                }
+
+                return false;
+            };
+
+            if (window.wp?.apiFetch?.use) {
+                wp.apiFetch.use((options, next) => {
+                    return next(options).catch(error => {
+                        if (shouldRedirectForAuthError(error)) {
+                            redirectToLogin();
+                        }
+                        throw error;
+                    });
+                });
+            }
 
             function waitForWP(timeout = 5000, interval = 100) {
                 return new Promise((resolve, reject) => {
@@ -4100,6 +4155,7 @@
 
                 next();
             });
+
 
             app.component('havencore-app', {
                 inject: ['mobileIcon', 'currentUser'],
