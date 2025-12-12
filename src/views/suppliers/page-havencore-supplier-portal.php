@@ -820,7 +820,7 @@
 
                                         <template #start>
                                             <div class="flex items-center gap-4">
-                                                <span class="font-semibold text-lg">{{ i18n.orders }}</span>
+                                                <span v-if="!mobile" class="font-semibold text-lg">{{ i18n.orders }}</span>
                                                 <FloatLabel class="w-48" variant="on">
                                                     <Select 
                                                         v-model="selectedStatus"
@@ -858,7 +858,7 @@
                                                 <Button 
                                                     icon="pi pi-search" 
                                                     @click="openSearchDialog"
-                                                    severity="secondary"
+                                                    severity="contrast"
                                                     variant="text"
                                                     raised
                                                 />
@@ -1679,6 +1679,7 @@
                             dismissableMask 
                             :header="i18n.search" 
                             class="w-full"
+                            :style="{ width: '400px' }"
                         >
                             <FloatLabel variant="on">
                                 <IconField class=" my-2">
@@ -1699,6 +1700,7 @@
                                         :label="i18n.cancel" 
                                         @click="cancelSearch"
                                         severity="secondary" 
+                                        size="small"
                                         raised
                                     />
                                     <Button 
@@ -1706,6 +1708,7 @@
                                         icon="pi pi-check" 
                                         @click="applySearch"
                                         severity="contrast"
+                                        size="small"
                                         raised
                                     />
                                 </div>

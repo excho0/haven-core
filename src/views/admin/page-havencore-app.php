@@ -45,6 +45,7 @@
             'back_to_wp_admin'    => __('Back to WP Admin', HAVEN_CORE_TEXT_DOMAIN),
 
             // ─── Sidebar / Navigation ──────────────────────────
+            'apply'               => __('Apply', HAVEN_CORE_TEXT_DOMAIN),
             'home'                => __('Home', HAVEN_CORE_TEXT_DOMAIN),
             'dashboard'           => __('Dashboard', HAVEN_CORE_TEXT_DOMAIN),
             'communications'      => __('Communications', HAVEN_CORE_TEXT_DOMAIN),
@@ -69,6 +70,9 @@
             'cancel'              => __('Cancel', HAVEN_CORE_TEXT_DOMAIN),
             'supplier_id'         => __('Supplier ID', HAVEN_CORE_TEXT_DOMAIN),
             'supplier'            => __('Supplier', HAVEN_CORE_TEXT_DOMAIN),
+            'search'              => __('Search', HAVEN_CORE_TEXT_DOMAIN),
+            'search_settings'     => __('Search Settings', HAVEN_CORE_TEXT_DOMAIN),
+            'filter_section'      => __('Filter Section', HAVEN_CORE_TEXT_DOMAIN),
             'supplier_placeholder' => __('Select a supplier', HAVEN_CORE_TEXT_DOMAIN),
             'order_id'            => __('Order ID (optional)', HAVEN_CORE_TEXT_DOMAIN),
             'subject'             => __('Subject', HAVEN_CORE_TEXT_DOMAIN),
@@ -131,16 +135,16 @@
         data() {
             // Initialize sidebarItems dynamically based on i18n
             const sidebarItems = [
-                {
-                    name: initialData.i18n.home,  // General label
-                    icon: 'pi pi-home',           // Icon for Home
-                    route: '/'                    // Route for Home section
-                },
-                {
-                    name: initialData.i18n.dashboard,
-                    icon: 'pi pi-chart-bar',           
-                    route: '/dashboard'
-                },
+                // {
+                //     name: initialData.i18n.home,  // General label
+                //     icon: 'pi pi-home',           // Icon for Home
+                //     route: '/'                    // Route for Home section
+                // },
+                // {
+                //     name: initialData.i18n.dashboard,
+                //     icon: 'pi pi-chart-bar',           
+                //     route: '/dashboard'
+                // },
                 {
                     name: initialData.i18n.communications,
                     icon: 'pi pi-comments',
@@ -334,6 +338,8 @@
     app.component('Card', PrimeVue.Card);
     app.component('OverlayBadge', PrimeVue.OverlayBadge);
     app.component('Badge', PrimeVue.Badge);
+
+    app.component('Menubar', PrimeVue.Menubar);
 
     // 🎨 Visual Feedback
     app.component('Skeleton', PrimeVue.Skeleton);
@@ -1271,9 +1277,9 @@
             const isRtl = Vue.computed(() => globalStore.isRtl);
 
             const AppSettings = Vue.computed(() => localStore.appSettings);
-            const OriginalSettings = Vue.ref(JSON.parse(JSON.stringify(localStore.appSettings.data)));
+            const OriginalSettings = JSON.parse(JSON.stringify(localStore.appSettings.data));
 
-            return {
+            const state = {
                 globalStore,
                 localStore,
 
@@ -1282,70 +1288,177 @@
 
                 settings: AppSettings,
                 originalSettings: OriginalSettings,
+                filteredSettings: {},
 
                 saving_settings: false,
                 panelStates: {},
-                panelsReady: false
+                panelsReady: false,
+
+                searchQuery: '',
+                searchDialogVisible: false,
+                dialogSearchQuery: '',
+                selectedSection: 'all',
+                sectionOptions: [],
+                menuItems: [],
+                debouncedFilterSettings: null
             };
+
+            return state;
         },
         template: `
             <div class="h-full p-4 flex flex-col space-y-4">
 
-                <!-- Header + Buttons Row (NOT sticky, stays at top of scrollable area) -->
-                <div class="flex flex-wrap justify-between items-center gap-4">
-                    <h1 class="text-xl font-semibold">{{ i18n.settings }}</h1>
+                <nav class="px-5 w-full">
+                    <Menubar :model="menuItems" class="!border-0 !bg-transparent">
+                        <template #start>
+                            <div class="flex flex-wrap items-center gap-4">
+                                <span v-if="!mobile" class="text-lg font-semibold">{{ i18n.settings }}</span>
+                                <FloatLabel class="w-60" variant="on">
+                                    <Select 
+                                        v-model="selectedSection"
+                                        :options="sectionOptions"
+                                        option-label="label"
+                                        option-value="value"
+                                        id="settingsSectionFilter"
+                                        @change="filterSettings"
+                                        class="w-full"
+                                    >
+                                        <template #value="{ value }">
+                                            <span class="flex items-center gap-2 w-full px-1">
+                                                <i :class="sectionOptions.find(opt => opt.value === value)?.icon || 'pi pi-filter'"></i>
+                                                <span>{{ sectionOptions.find(opt => opt.value === value)?.label || i18n.filter_section || 'Filter Sections' }}</span>
+                                            </span>
+                                        </template>
+                                        <template #option="{ option }">
+                                            <span class="flex items-center gap-2">
+                                                <i :class="option.icon"></i>
+                                                <span>{{ option.label }}</span>
+                                            </span>
+                                        </template>
+                                    </Select>
+                                    <label for="settingsSectionFilter">{{ i18n.filter_section || 'Filter Sections' }}</label>
+                                </FloatLabel>
+                            </div>
+                        </template>
 
-                        <div class="flex items-center gap-3">
-
-                            <!-- Show only when changes are detected -->
-                            <transition name="fade" mode="out-in">
-                                <div v-if="changesDetected" class="flex items-center gap-3">
+                        <template #end>
+                            <div class="flex flex-wrap items-center gap-3">
+                                <template v-if="mobile">
                                     <Button 
-                                        :label="mobile ? null : i18n.save"
-                                        icon="pi pi-save"
-                                        @click="saveSettings"
-                                        :loading="saving_settings"
-                                        :disabled="saving_settings"
-                                        size="small"
-                                        severity="contrast" 
-                                        raised
-                                    />
-                                    <Button 
-                                        :label="mobile ? null : 'Revert'"
-                                        icon="pi pi-refresh"
-                                        @click="revertChanges"
-                                        :disabled="saving_settings"
-                                        size="small"
+                                        icon="pi pi-search" 
+                                        @click="openSearchDialog"
                                         severity="contrast"
-                                        variant="text" 
+                                        variant="text"
+                                        size="small"
                                         raised
                                     />
-                                </div>
-                            </transition>
+                                </template>
+
+                                <template v-else>
+                                    <FloatLabel variant="on" class="w-64">
+                                        <IconField>
+                                            <InputIcon class="pi pi-search" />
+                                            <InputText 
+                                                v-model="searchQuery" 
+                                                id="settingsSearch" 
+                                                class="w-full" 
+                                                @input="debouncedFilterSettings"
+                                            />
+                                        </IconField>
+                                        <label for="settingsSearch">{{ i18n.search }}</label>
+                                    </FloatLabel>
+                                </template>
+
+                                <transition name="fade" mode="out-in">
+                                    <div v-if="changesDetected" class="flex items-center gap-3">
+                                        <Button 
+                                            :label="mobile ? null : i18n.save"
+                                            icon="pi pi-save"
+                                            @click="saveSettings"
+                                            :loading="saving_settings"
+                                            :disabled="saving_settings"
+                                            size="small"
+                                            severity="contrast" 
+                                            raised
+                                        />
+                                        <Button 
+                                            :label="mobile ? null : 'Revert'"
+                                            icon="pi pi-refresh"
+                                            @click="revertChanges"
+                                            :disabled="saving_settings"
+                                            size="small"
+                                            severity="contrast"
+                                            variant="text" 
+                                            raised
+                                        />
+                                    </div>
+                                </transition>
+
+                                <Button
+                                    icon="pi pi-angle-double-up"
+                                    :label="mobile ? null : i18n.expand"
+                                    @click="setAllPanels(false)"
+                                    size="small"
+                                    severity="contrast"
+                                    variant="text" 
+                                    raised
+                                />
+
+                                <Button
+                                    icon="pi pi-angle-double-down"
+                                    :label="mobile ? null : i18n.collapse"
+                                    @click="setAllPanels(true)"
+                                    size="small"
+                                    severity="contrast"
+                                    variant="text" 
+                                    raised
+                                />
+                            </div>
+                        </template>
+                    </Menubar>
+                </nav>
+
+                <Dialog
+                    dismissableMask
+                    :visible="searchDialogVisible"
+                    @update:visible="val => searchDialogVisible = val"
+                    @hide="closeSearchDialog"
+                    modal
+                    :header="i18n.search_settings || i18n.search"
+                    :style="{ width: '400px' }"
+                >
+                    <div class="py-2">
+                        <FloatLabel variant="on">
+                            <IconField>
+                                <InputIcon class="pi pi-search" />
+                                <InputText 
+                                    v-model="dialogSearchQuery" 
+                                    id="settingsSearchDialog" 
+                                    class="w-full"
+                                />
+                            </IconField>
+                            <label for="settingsSearchDialog">{{ i18n.search }}</label>
+                        </FloatLabel>
+                    </div>
+                    <div class="flex justify-end gap-2 mt-4">
+                        <Button
+                            :label="i18n.cancel"
+                            severity="secondary"
+                            size="small"
+                            variant="text"
+                            @click="closeSearchDialog"
+                        />
+                        <Button
+                            :label="i18n.apply"
+                            icon="pi pi-check"
+                            size="small"
+                            severity="contrast"
+                            @click="applyDialogSearch"
+                        />
+                    </div>
+                </Dialog>
 
 
-
-                            <Button
-                                icon="pi pi-angle-double-up"
-                                :label="mobile ? null : i18n.expand"
-                                @click="setAllPanels(false)"
-                                size="small"
-                                severity="contrast"
-                                variant="text" 
-                                raised
-                            />
-
-                            <Button
-                                icon="pi pi-angle-double-down"
-                                :label="mobile ? null : i18n.collapse"
-                                @click="setAllPanels(true)"
-                                size="small"
-                                severity="contrast"
-                                variant="text" 
-                                raised
-                            />
-                        </div>
-                </div>
 
             <transition 
                 name="quick-fade" 
@@ -1441,7 +1554,8 @@
                     }"
                 >
 
-                    <template v-for="(group, groupKey) in settings.data" :key="groupKey">
+                    <TransitionGroup name="settings-fade" tag="div">
+                        <template v-for="(group, groupKey) in filteredSettings" :key="groupKey">
                         <Panel 
                             v-if="panelsReady && !isHidden(groupKey)"
                             toggleable
@@ -1583,7 +1697,8 @@
                             </div>
                         </div>
                         </Panel>
-                    </template>
+                        </template>
+                    </TransitionGroup>
                 </ScrollPanel>
             </transition>
 
@@ -1619,6 +1734,10 @@
         mounted() {
             const savedStates = JSON.parse(localStorage.getItem('hc_settings_panelStates') || '{}');
 
+            this.initializeFilter();
+            this.sectionOptions = this.buildSectionOptions();
+            this.filteredSettings = this.settings?.data || {};
+
             for (const groupKey in this.settings.data) {
                 this.panelStates[groupKey] = savedStates[groupKey] === false ? false : true;
 
@@ -1635,6 +1754,14 @@
             this.panelsReady = true;
         },
         watch: {
+            settings: {
+                handler(newVal) {
+                    if (newVal?.data) {
+                        this.initializeFilter();
+                    }
+                },
+                deep: true
+            },
             panelStates: {
                 handler(newVal) {
                     const expanded = Object.entries(newVal)
@@ -1687,6 +1814,133 @@
 
                 return false;
             },
+            initializeFilter() {
+                this.sectionOptions = this.buildSectionOptions();
+
+                if (!this.debouncedFilterSettings) {
+                    this.debouncedFilterSettings = this.createDebouncedFilter();
+                }
+
+                this.filterSettings();
+            },
+            openSearchDialog() {
+                this.searchDialogVisible = true;
+                this.dialogSearchQuery = this.searchQuery;
+            },
+            closeSearchDialog() {
+                this.searchDialogVisible = false;
+            },
+            applyDialogSearch() {
+                this.searchQuery = this.dialogSearchQuery;
+                this.searchDialogVisible = false;
+                this.filterSettings();
+            },
+            filterSettings() {
+                const settingsData = this.settings?.data || {};
+                const query = (this.searchQuery || '').toLowerCase();
+                const selected = this.selectedSection;
+                const i18n = this.i18n;
+
+                const shouldMatchSection = (key) => {
+                    if (!selected || selected === 'all') {
+                        return true;
+                    }
+                    return key === selected;
+                };
+
+                const matchKey = (key) => key.toLowerCase().includes(query);
+                const matchLabel = (path) => {
+                    const label = i18n[path]?.label || i18n[path] || '';
+                    return typeof label === 'string' && label.toLowerCase().includes(query);
+                };
+
+                const iterate = (data, basePath = '') => {
+                    const result = {};
+
+                    Object.entries(data).forEach(([key, value]) => {
+                        const path = basePath ? `${basePath}.${key}` : key;
+                        const hidden = this.isHidden(path);
+
+                        if (hidden) {
+                            return;
+                        }
+
+                        if (basePath === '' && !shouldMatchSection(key)) {
+                            return;
+                        }
+
+                        const parentMatches = !query || matchKey(key) || matchLabel(path);
+
+                        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                            if (parentMatches) {
+                                result[key] = value;
+                                return;
+                            }
+
+                            const children = iterate(value, path);
+
+                            if (Object.keys(children).length > 0) {
+                                result[key] = children;
+                            }
+                        } else {
+                            if (parentMatches) {
+                                result[key] = value;
+                            }
+                        }
+                    });
+
+                    return result;
+                };
+
+                this.filteredSettings = iterate(settingsData);
+                this.expandMatches(this.filteredSettings);
+            },
+            buildSectionOptions() {
+                const settingsData = this.settings?.data || {};
+                const groups = Object.keys(settingsData);
+
+                const options = groups.map((key) => ({
+                    label: (this.i18n?.[key]?.label) || key.replace(/_/g, ' '),
+                    value: key,
+                    icon: this.fieldMeta?.[key]?.icon || 'pi pi-folder'
+                }));
+
+                return [
+                    {
+                        label: this.i18n?.all_sections || 'All Sections',
+                        value: 'all',
+                        icon: 'pi pi-th-large',
+                    },
+                    ...options
+                ];
+            },
+            expandMatches(filtered) {
+                const openPanels = (data, basePath = '') => {
+                    Object.entries(data).forEach(([key, value]) => {
+                        const path = basePath ? `${basePath}.${key}` : key;
+
+                        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                            if (basePath === '') {
+                                this.panelStates[key] = false;
+                            } else {
+                                this.panelStates[path] = false;
+                            }
+                            openPanels(value, path);
+                        }
+                    });
+                };
+
+                openPanels(filtered);
+            },
+            createDebouncedFilter(delay = 200) {
+                let timeout = null;
+                return () => {
+                    clearTimeout(timeout);
+                    timeout = setTimeout(() => {
+                        this.filterSettings();
+                    }, delay);
+                };
+            },
             saveSettings() {
                 this.saving_settings = true;
 
@@ -1730,20 +1984,20 @@
     };
 
     const Routes = [
-        { 
-            path: '/', 
-            name: 'home',
-            component: Home,
-            meta: { title: initialData.i18n.home }
+        // { 
+        //     path: '/', 
+        //     name: 'home',
+        //     component: Home,
+        //     meta: { title: initialData.i18n.home }
 
-        },
-        { 
-            path: '/dashboard', 
-            name: 'dashboard',
-            component: Dashboard,
-            meta: { title: initialData.i18n.dashboard }
+        // },
+        // { 
+        //     path: '/dashboard', 
+        //     name: 'dashboard',
+        //     component: Dashboard,
+        //     meta: { title: initialData.i18n.dashboard }
 
-        },
+        // },
         { 
             path: '/Settings', 
             name: 'settings',
@@ -1759,7 +2013,7 @@
         // Catch-all fallback: redirect unknown paths to home
         {
             path: '/:pathMatch(.*)*',
-            redirect: { name: 'home' }
+            redirect: { name: 'settings' } // Redirects unknown paths to settings for now but later home
         }
     ]
     

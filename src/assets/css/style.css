@@ -588,6 +588,28 @@ even if global styles (like from WP admin) interfere with checkboxes/radios */
   opacity: 1;
 }
 
+/* Settings panel filter transitions */
+.settings-fade-enter-active,
+.settings-fade-leave-active {
+    position: relative;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.settings-fade-enter-from,
+.settings-fade-leave-to {
+    opacity: 0;
+    transform: translateY(-8px);
+}
+
+.settings-fade-leave-active {
+    position: absolute;
+    width: 100%;
+}
+
+.settings-fade-move {
+    transition: transform 0.2s ease;
+}
+
 /* 
 // 📌 Supplier Portal Page
 // ===========================================================================\
