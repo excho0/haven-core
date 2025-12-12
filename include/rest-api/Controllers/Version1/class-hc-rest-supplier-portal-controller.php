@@ -9,6 +9,8 @@ use WP_Error;
 use HavenCore\Classes\HC_Settings;
 use HavenCore\Services\HC_Supplier_Service;
 use HavenCore\WooCommerce\Hooks\Orders;
+use HavenCore\Settings\Notifications;
+use HavenCore\Settings\Integrations;
 
 class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 
@@ -429,8 +431,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			return;
 		}
 
-		$settings = new HC_Settings();
-		if ( ! $settings->get( 'notifications.notify_admin_supplier_product_updates', true ) ) {
+		if ( ! Notifications::adminSupplierProductUpdatesEnabled() ) {
 			return;
 		}
 
@@ -730,7 +731,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			}
 		}
 
-		if ( $settings->get( 'integrations.paypal.auto_tracking', false ) ) {
+		if ( Integrations::paypalAutoTrackingEnabled() ) {
 			$this->maybe_sync_paypal_tracking_with_paypal( $order, $supplier_data[ $supplier_id ] );
 		}
 
@@ -743,7 +744,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		$email_body = ob_get_clean();
 
 		if (
-			$settings->get( 'notifications.customer_tracking_emails', true ) &&
+			Notifications::customerTrackingEmailsEnabled() &&
 			! empty( $email_body )
 		) {
 			wp_mail(

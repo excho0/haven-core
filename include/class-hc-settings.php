@@ -96,7 +96,7 @@ class HC_Settings {
             ],
         ],
         'suppliers' => [
-            'icon' => 'pi pi-users',
+            'icon' => 'pi pi-truck',
             'strict_validation' => [
                 'key'     => 'strict_validation',
                 'default' => true,
@@ -122,70 +122,84 @@ class HC_Settings {
                 'key'     => 'order_review_before_payment',
                 'default' => false,
                 'tooltip' => 'Let customers place orders without paying right away. You review the order and send a payment link when ready.',
-                'icon'    => 'pi pi-clock', // optional: 'pi pi-lock', 'pi pi-hand-stop'
+                'icon'    => 'pi pi-clock',
+                'hidden'  => true,
             ],
             'account_security_flow' => [
                 'key'     => 'account_security_flow',
                 'default' => false,
                 'tooltip' => 'Require customers to verify their email before activating accounts or claiming guest orders. Disables automatic login until verification completes.',
-                'icon'    => 'pi pi-shield',
+                'icon'    => 'pi pi-lock',
             ],
         ],
         'notifications' => [
-            'icon' => 'pi pi-envelope',
-            'customer_verification_email' => [
-                'key'     => 'notify_customer_verification_email',
-                'default' => true,
-                'tooltip' => 'Send verification emails for new customer accounts and guest checkout claims.',
-                'icon'    => 'pi pi-check-circle',
+            'icon'    => 'pi pi-envelope',
+            'tooltip' => 'Configure automated emails sent to customers, suppliers, and administrators.',
+            'customers' => [
+                'icon'    => 'pi pi-users',
+                'tooltip' => 'Customer-facing notifications.',
+                'verification_email' => [
+                    'key'     => 'notify_customer_verification_email',
+                    'default' => true,
+                    'tooltip' => 'Send verification emails for new customer accounts and guest checkout claims.',
+                    'icon'    => 'pi pi-check-circle',
+                ],
+                'password_reset_email' => [
+                    'key'     => 'notify_customer_password_reset_email',
+                    'default' => true,
+                    'tooltip' => 'Send ' . PLUGIN_NAME . '’s custom password reset emails.',
+                    'icon'    => 'pi pi-refresh',
+                ],
+                'account_removal_email' => [
+                    'key'     => 'notify_customer_account_removal_email',
+                    'default' => true,
+                    'tooltip' => 'Send confirmation emails for account removal/cleanup requests.',
+                    'icon'    => 'pi pi-user-minus',
+                ],
+                'tracking_emails' => [
+                    'key'     => 'notify_customer_tracking_emails',
+                    'default' => true,
+                    'tooltip' => 'Email customers when suppliers submit tracking details.',
+                    'icon'    => 'pi pi-truck',
+                ],
+                'payment_reminder_email' => [
+                    'key'     => 'notify_customer_payment_reminder_email',
+                    'default' => true,
+                    'tooltip' => 'Send payment reminder emails when orders are moved back to pending.',
+                    'icon'    => 'pi pi-credit-card',
+                ],
             ],
-            'customer_password_reset_email' => [
-                'key'     => 'notify_customer_password_reset_email',
-                'default' => true,
-                'tooltip' => 'Send ' . PLUGIN_NAME . '’s custom password reset emails.',
-                'icon'    => 'pi pi-refresh',
-            ],
-            'customer_account_removal_email' => [
-                'key'     => 'notify_customer_account_removal_email',
-                'default' => true,
-                'tooltip' => 'Send confirmation emails for account removal/cleanup requests.',
-                'icon'    => 'pi pi-user-minus',
-            ],
-            'customer_tracking_emails' => [
-                'key'     => 'notify_customer_tracking_emails',
-                'default' => true,
-                'tooltip' => 'Email customers when suppliers submit tracking details.',
+            'suppliers' => [
                 'icon'    => 'pi pi-truck',
+                'tooltip' => 'Notifications sent to supplier accounts.',
+                'welcome_email' => [
+                    'key'     => 'notify_supplier_welcome_email',
+                    'default' => true,
+                    'tooltip' => 'Send welcome/onboarding emails to newly invited suppliers.',
+                    'icon'    => 'pi pi-send',
+                ],
+                'assignment_email' => [
+                    'key'     => 'notify_supplier_assignment_email',
+                    'default' => true,
+                    'tooltip' => 'Email suppliers whenever a new order is assigned to them.',
+                    'icon'    => 'pi pi-briefcase',
+                ],
+                'reassignment_email' => [
+                    'key'     => 'notify_supplier_reassignment_email',
+                    'default' => true,
+                    'tooltip' => 'Notify suppliers if an existing order gets reassigned to them.',
+                    'icon'    => 'pi pi-user-edit',
+                ],
             ],
-            'supplier_assignment_email' => [
-                'key'     => 'notify_supplier_assignment_email',
-                'default' => true,
-                'tooltip' => 'Email suppliers whenever a new order is assigned to them.',
-                'icon'    => 'pi pi-briefcase',
-            ],
-            'supplier_reassignment_email' => [
-                'key'     => 'notify_supplier_reassignment_email',
-                'default' => true,
-                'tooltip' => 'Notify suppliers if an existing order gets reassigned to them.',
-                'icon'    => 'pi pi-user-edit',
-            ],
-            'supplier_welcome_email' => [
-                'key'     => 'notify_supplier_welcome_email',
-                'default' => true,
-                'tooltip' => 'Send welcome/onboarding emails to newly invited suppliers.',
-                'icon'    => 'pi pi-send',
-            ],
-            'customer_payment_reminder_email' => [
-                'key'     => 'notify_customer_payment_reminder_email',
-                'default' => true,
-                'tooltip' => 'Send payment reminder emails when orders are moved back to pending.',
-                'icon'    => 'pi pi-credit-card',
-            ],
-            'notify_admin_supplier_product_updates' => [
-                'key'     => 'notify_admin_supplier_product_updates',
-                'default' => true,
-                'tooltip' => 'Alert the site administrator when suppliers update product inventory or pricing.',
-                'icon'    => 'pi pi-eye',
+            'administrators' => [
+                'icon'    => 'pi pi-shield',
+                'tooltip' => 'Internal alerts for store administrators.',
+                'supplier_product_updates_email' => [
+                    'key'     => 'notify_admin_supplier_product_updates_email',
+                    'default' => true,
+                    'tooltip' => 'Send email alerts to the site administrator when suppliers update products.',
+                    'icon'    => 'pi pi-eye',
+                ],
             ],
         ],
     ];
@@ -232,19 +246,21 @@ class HC_Settings {
      */
     public function load(): bool
     {
-        $stored = get_option($this->option_name);
+        $stored   = get_option($this->option_name);
         $defaults = ArrayHelpers::buildDefaults(self::$settingSchema);
-    
+
         if (is_string($stored)) {
             $decrypted = $this->decryptSettings($stored);
-    
+
             if (is_array($decrypted)) {
-                $filtered = ArrayHelpers::filterBySchema($decrypted, self::$settingSchema);
+                self::migrateLegacyNotifications($decrypted);
+
+                $filtered       = ArrayHelpers::filterBySchema($decrypted, self::$settingSchema);
                 $this->settings = array_replace_recursive($defaults, $filtered);
                 return true;
             }
         }
-    
+
         $this->settings = $defaults;
         return false;
     }    
@@ -278,6 +294,92 @@ class HC_Settings {
         }
 
         return $value;
+    }
+
+    /**
+     * Typed getters: centralize casting/normalization for consistent usage across the codebase.
+     */
+    public function enabled(string $key, bool $default = true): bool
+    {
+        $value = $this->get($key, $default);
+        return $this->normalizeBool($value, $default);
+    }
+
+    public function bool(string $key, bool $default = false): bool
+    {
+        $value = $this->get($key, $default);
+        return $this->normalizeBool($value, $default);
+    }
+
+    public function int(string $key, int $default = 0): int
+    {
+        $value = $this->get($key, $default);
+        if (is_int($value)) {
+            return $value;
+        }
+        if (is_bool($value)) {
+            return $value ? 1 : 0;
+        }
+        if (is_numeric($value)) {
+            return (int) $value;
+        }
+        return $default;
+    }
+
+    public function float(string $key, float $default = 0.0): float
+    {
+        $value = $this->get($key, $default);
+        if (is_float($value) || is_int($value)) {
+            return (float) $value;
+        }
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+        return $default;
+    }
+
+    public function string(string $key, string $default = ''): string
+    {
+        $value = $this->get($key, $default);
+        if (is_string($value)) {
+            return $value;
+        }
+        if (is_null($value)) {
+            return $default;
+        }
+        if (is_scalar($value)) {
+            return (string) $value;
+        }
+        return $default;
+    }
+
+    public function array(string $key, array $default = []): array
+    {
+        $value = $this->get($key, $default);
+        return is_array($value) ? $value : $default;
+    }
+
+    /**
+     * Normalize booleans from mixed input ("1", "true", 1, true, etc.).
+     */
+    private function normalizeBool($value, bool $fallback): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_int($value)) {
+            return $value !== 0;
+        }
+        if (is_string($value)) {
+            $v = strtolower(trim($value));
+            if ($v === '1' || $v === 'true' || $v === 'yes' || $v === 'on') {
+                return true;
+            }
+            if ($v === '0' || $v === 'false' || $v === 'no' || $v === 'off' || $v === '') {
+                return false;
+            }
+        }
+        return (bool) $fallback;
     }
 
     /**
@@ -331,6 +433,60 @@ class HC_Settings {
             }
 
             $ref = &$ref[$segment];
+        }
+    }
+
+    /**
+     * Backfill legacy flat notification settings into the grouped schema.
+     */
+    private static function migrateLegacyNotifications(array &$data): void
+    {
+        if (!isset($data['notifications']) || !is_array($data['notifications'])) {
+            return;
+        }
+
+        $notifications = $data['notifications'];
+
+        if (
+            isset($notifications['customers']) ||
+            isset($notifications['suppliers']) ||
+            isset($notifications['administrators'])
+        ) {
+            return;
+        }
+
+        $map = [
+            'customer_verification_email'      => ['customers', 'verification_email'],
+            'customer_password_reset_email'   => ['customers', 'password_reset_email'],
+            'customer_account_removal_email'  => ['customers', 'account_removal_email'],
+            'customer_tracking_emails'        => ['customers', 'tracking_emails'],
+            'customer_payment_reminder_email' => ['customers', 'payment_reminder_email'],
+            'supplier_assignment_email'       => ['suppliers', 'assignment_email'],
+            'supplier_reassignment_email'     => ['suppliers', 'reassignment_email'],
+            'supplier_welcome_email'          => ['suppliers', 'welcome_email'],
+            'notify_admin_supplier_product_updates' => ['administrators', 'supplier_product_updates'],
+        ];
+
+        $grouped = [];
+
+        foreach ($map as $legacy => [$section, $field]) {
+            if (!array_key_exists($legacy, $notifications)) {
+                continue;
+            }
+
+            $grouped[$section][$field] = $notifications[$legacy];
+        }
+
+        foreach ($notifications as $legacy => $value) {
+            if (array_key_exists($legacy, $map)) {
+                continue;
+            }
+
+            $grouped['_legacy'][$legacy] = $value;
+        }
+
+        if (!empty($grouped)) {
+            $data['notifications'] = $grouped;
         }
     }
 

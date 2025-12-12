@@ -1,6 +1,6 @@
 <?php
 
-use HavenCore\Classes\HC_Settings;
+use HavenCore\Settings\Suppliers as SuppliersSettings;
 
 
 add_filter('admin_body_class', function($classes) {
@@ -50,8 +50,7 @@ foreach ($installed_locales as $locale) {
     }
 }
 
-$settings = new HC_Settings();
-$suppliersSettings = $settings->get('suppliers');
+$suppliersSettings = SuppliersSettings::all();
 
 ?>
 

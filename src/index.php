@@ -179,7 +179,7 @@ add_action( 'plugins_loaded', function () {
 // ===============================================
 // 3. Load Custom WP Login hooks/styles
 // ===============================================
-if ($settings->get('general.custom_login_page', true)) {
+if (\HavenCore\Settings\General::customLoginPageEnabled()) {
     // If a custom login UI is enabled, load the custom login hooks
     require_once HAVEN_CORE_PAGE_TEMPLATES_PATH . 'wp-login.php';
 }

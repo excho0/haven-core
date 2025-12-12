@@ -2,9 +2,10 @@
 
 namespace HavenCore\WooCommerce\Hooks;
 
-use HavenCore\Classes\HC_Settings;
 use HavenCore\Services\EmailVerificationService;
 use HavenCore\Services\HC_Supplier_Service;
+use HavenCore\Settings\WooCommerce as WCSettings;
+use HavenCore\Settings\Notifications;
 use WC_Order;
 
 
@@ -66,8 +67,6 @@ class Orders
         if ($registered) return;
         $registered = true;
 
-        $settings = new HC_Settings();
-        
         // Trigger supplier job when a real payment is completed via any online gateway
         add_action('woocommerce_payment_complete', [self::class, 'schedule_supplier_email_job'], 10, 1);
 
@@ -81,7 +80,7 @@ class Orders
         // Catch manual/COD/late payments when status changes from 'pending' to 'processing'
         add_action('woocommerce_order_status_pending_to_processing', [self::class, 'schedule_supplier_email_job'], 10, 1);
 
-        if ($settings->get('WooCommerce.account_security_flow', false)) {
+        if (WCSettings::accountSecurityFlowEnabled()) {
             add_action('woocommerce_thankyou', [self::class, 'handle_guest_checkout_verification'], 25, 1);
         }
 
@@ -273,7 +272,6 @@ class Orders
      */
     public static function send_supplier_email(WC_Order $order, string $supplier_id, array $supplier_data, string $context = 'assignment'): void
     {
-        $settings = new HC_Settings();
         $context_toggle_map = [
             'assignment'   => 'notifications.supplier_assignment_email',
             'reassignment' => 'notifications.supplier_reassignment_email',
@@ -281,7 +279,14 @@ class Orders
 
         $toggle_key = $context_toggle_map[$context] ?? $context_toggle_map['assignment'];
 
-        if (!$settings->get($toggle_key, true)) {
+        $enabled = true;
+        if ($toggle_key === 'notifications.supplier_assignment_email') {
+            $enabled = Notifications::supplierAssignmentEmailEnabled();
+        } elseif ($toggle_key === 'notifications.supplier_reassignment_email') {
+            $enabled = Notifications::supplierReassignmentEmailEnabled();
+        }
+
+        if (!$enabled) {
             return;
         }
 
@@ -358,8 +363,7 @@ class Orders
      */
     public static function send_customer_payment_email_on_manual_status_change($order_id, $old_status, $new_status, $order): void
     {
-        $settings = new HC_Settings();
-        if (!$settings->get('notifications.customer_payment_reminder_email', true)) {
+        if (!Notifications::customerPaymentReminderEmailEnabled()) {
             return;
         }
 

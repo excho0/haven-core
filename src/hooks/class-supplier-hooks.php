@@ -2,8 +2,8 @@
 
 namespace HavenCore\Hooks;
 
-use HavenCore\Classes\HC_Settings;
 use HavenCore\Services\HC_Supplier_Service;
+use HavenCore\Settings\Notifications;
 
 /**
  * Class SupplierHooks
@@ -216,7 +216,7 @@ class SupplierHooks
      */
     public static function handleWelcomeEmailJob(string $email, string $supplier_name, string $user_id): void
     {
-        if (!(new HC_Settings())->get('notifications.supplier_welcome_email', true)) {
+        if (!Notifications::supplierWelcomeEmailEnabled()) {
             return;
         }
 
@@ -293,8 +293,7 @@ class SupplierHooks
 	 * @return void
 	 */
 	public static function sendSupplierProductUpdateAlert( $args ): void {
-		$settings = new HC_Settings();
-		if ( ! $settings->get( 'notifications.notify_admin_supplier_product_updates', true ) ) {
+		if ( ! Notifications::adminSupplierProductUpdatesEnabled() ) {
 			return;
 		}
 

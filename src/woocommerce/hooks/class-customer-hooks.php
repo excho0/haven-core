@@ -5,6 +5,9 @@ namespace HavenCore\WooCommerce\Hooks;
 use HavenCore\Classes\HC_Settings;
 use HavenCore\Services\EmailVerificationService;
 use HavenCore\Utils\UserUtils;
+use HavenCore\Settings\Notifications;
+use HavenCore\Settings\WooCommerce as WCSettings;
+use HavenCore\Settings\General;
 use WP_Error;
 
 defined('ABSPATH') || exit;
@@ -33,28 +36,17 @@ class Customer {
     }
 
     /**
-     * Helper to check notification toggles.
-     *
-     * @param string $key
-     * @return bool
-     */
-    private static function notificationEnabled(string $key): bool
-    {
-        return (bool) self::settings()->get('notifications.' . $key, true);
-    }
-
-    /**
      * Register all customer-related hooks.
      *
      * @return void
      */
     public static function registerHooks(): void {
         $settings = self::settings();
-        $verificationEmailsEnabled = self::notificationEnabled('customer_verification_email');
-        $accountRemovalEmailsEnabled = self::notificationEnabled('customer_account_removal_email');
-        $passwordResetEmailsEnabled = self::notificationEnabled('customer_password_reset_email');
+        $verificationEmailsEnabled = Notifications::customerVerificationEmailEnabled();
+        $accountRemovalEmailsEnabled = Notifications::customerAccountRemovalEmailEnabled();
+        $passwordResetEmailsEnabled = Notifications::customerPasswordResetEmailEnabled();
 
-        if ($settings->get('WooCommerce.account_security_flow', false) && $verificationEmailsEnabled) {
+        if (WCSettings::accountSecurityFlowEnabled() && $verificationEmailsEnabled) {
             add_filter('woocommerce_registration_errors', [self::class, 'handle_email_verification_flow'], 0, 3);
             add_filter('woocommerce_registration_auth_new_customer', '__return_false');
 
@@ -63,7 +55,7 @@ class Customer {
             add_filter('woocommerce_email_enabled_customer_new_account_admin', '__return_false');
         }
 
-        if ($settings->get('WooCommerce.customer_farewell', false) && $accountRemovalEmailsEnabled) {
+        if (WCSettings::customerFarewellEnabled() && $accountRemovalEmailsEnabled) {
 
             // Registering the hook for displaying the delete account button and modal
             add_action('woocommerce_after_my_account', [self::class, 'woo_delete_account_button_with_modal']);
@@ -85,13 +77,13 @@ class Customer {
             add_action('wp_footer', [self::class, 'display_conf_activate_account']);
         }
 
-        if ($passwordResetEmailsEnabled && $settings->get('general.password_reset_page', false)) {
+        if ($passwordResetEmailsEnabled && General::passwordResetPageEnabled()) {
             add_action('wp_footer', [self::class, 'display_conf_passwd_reset_email_sent']);
             add_action('wp_footer', [self::class, 'display_conf_password_reset_completed']);
         }
 
         // Redirect to a custom page during checkout (before payment)
-        if ($settings->get('WooCommerce.order_review_before_payment', false)) {
+        if (WCSettings::orderReviewBeforePaymentEnabled()) {
             add_action('template_redirect', [self::class, 'redirectToPlaceOrderPage']);
         }
     }
@@ -225,7 +217,7 @@ class Customer {
      */
     public static function send_verification_email(string $recipient, string $username, string $verification_link): bool
     {
-        if (!self::notificationEnabled('customer_verification_email')) {
+        if (!Notifications::customerVerificationEmailEnabled()) {
             return false;
         }
 
@@ -454,7 +446,7 @@ class Customer {
             return;
         }
 
-        if (!self::notificationEnabled('customer_account_removal_email')) {
+        if (!Notifications::customerAccountRemovalEmailEnabled()) {
             wp_send_json_error(__('Account removal emails are disabled.', HAVEN_CORE_TEXT_DOMAIN));
             return;
         }
@@ -607,7 +599,7 @@ class Customer {
 
         $mail_sent = true;
 
-        if (self::notificationEnabled('customer_account_removal_email')) {
+        if (Notifications::customerAccountRemovalEmailEnabled()) {
             $subject = __('We Are Really Going To Miss You', HAVEN_CORE_TEXT_DOMAIN);
             $headers = array('Content-Type: text/html; charset=UTF-8');
             $template_path = HAVEN_CORE_EMAIL_TEMPLATES_PATH . '/account-deletion-confirmation.php';
@@ -642,7 +634,7 @@ class Customer {
      */
     public static function display_conf_reg_email_sent(): void
     {
-        if (!self::notificationEnabled('customer_verification_email')) {
+        if (!Notifications::customerVerificationEmailEnabled()) {
             return;
         }
 
@@ -672,7 +664,7 @@ class Customer {
      */
     public static function display_conf_passwd_reset_email_sent(): void
     {
-        if (!self::notificationEnabled('customer_password_reset_email')) {
+        if (!Notifications::customerPasswordResetEmailEnabled()) {
             return;
         }
 
@@ -723,7 +715,7 @@ class Customer {
      */
     public static function display_conf_activate_account(): void
     {
-        if (!self::notificationEnabled('customer_verification_email')) {
+        if (!Notifications::customerVerificationEmailEnabled()) {
             return;
         }
 
@@ -752,7 +744,7 @@ class Customer {
      */
     public static function display_conf_password_reset_completed(): void
     {
-        if (!self::notificationEnabled('customer_password_reset_email')) {
+        if (!Notifications::customerPasswordResetEmailEnabled()) {
             return;
         }
 

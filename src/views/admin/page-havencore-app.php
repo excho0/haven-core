@@ -1441,14 +1441,13 @@
                     }"
                 >
 
-                    <Panel 
-                        v-if="panelsReady"
-                        v-for="(group, groupKey) in settings.data" 
-                        :key="groupKey" 
-                        toggleable
-                        v-model:collapsed="panelStates[groupKey]"
-                        class="m-2"
-                    >
+                    <template v-for="(group, groupKey) in settings.data" :key="groupKey">
+                        <Panel 
+                            v-if="panelsReady && !isHidden(groupKey)"
+                            toggleable
+                            v-model:collapsed="panelStates[groupKey]"
+                            class="m-2"
+                        >
                         <template #header>
                             <span class="flex items-center gap-3 text-base font-semibold capitalize tracking-wide">
                                 <i
@@ -1463,7 +1462,7 @@
                         <div class="space-y-4">
                             <div v-for="(value, fieldKey) in group" :key="fieldKey">
                                 <!-- Nested object -->
-                                <div v-if="typeof value === 'object' && value !== null && !Array.isArray(value)">
+                                <div v-if="typeof value === 'object' && value !== null && !Array.isArray(value) && !isHidden(groupKey + '.' + fieldKey)">
                                     <Panel 
                                         toggleable 
                                         class="ml-4"
@@ -1481,8 +1480,9 @@
                                             </span>
                                         </template>
 
-                                        <div v-for="(nestedVal, nestedKey) in value" :key="nestedKey" class="mb-4">
-                                            <template v-if="typeof nestedVal === 'boolean'">
+                                        <template v-for="(nestedVal, nestedKey) in value">
+                                            <div v-if="!isHidden(groupKey + '.' + fieldKey + '.' + nestedKey)" :key="nestedKey" class="mb-4">
+                                                <template v-if="typeof nestedVal === 'boolean'">
                                                 <div class="setting-option_boolean flex items-center justify-between shadow-sm">
                                                     <span class="flex items-center gap-2 font-medium capitalize">
                                                     <i 
@@ -1509,30 +1509,31 @@
                                                         :aria-label="i18n[groupKey + '.' + fieldKey + '.' + nestedKey]?.label || nestedKey"
                                                     />
                                                 </div>
-                                            </template>
+                                                </template>
 
-                                            <FloatLabel variant="on" v-else>
-                                                <IconField>
-                                                    <InputIcon>
-                                                        <i :class="fieldMeta?.[groupKey]?.[fieldKey]?.[nestedKey]?.icon || 'pi pi-pencil'" />
-                                                    </InputIcon>
-                                                    <InputText
-                                                        v-model="settings.data[groupKey][fieldKey][nestedKey]"
-                                                        v-tooltip.focus.top="i18n[groupKey + '.' + fieldKey + '.' + nestedKey]?.tooltip || ''"
-                                                        :class="{ 'changed-field': isChanged(groupKey, fieldKey, nestedKey) }"
-                                                        class="w-full"
-                                                    />
-                                                </IconField>
-                                                <label>
-                                                    {{ i18n[groupKey + '.' + fieldKey + '.' + nestedKey]?.label || nestedKey.replace(/_/g, ' ') }}
-                                                </label>
-                                            </FloatLabel>
-                                        </div>
+                                                <FloatLabel variant="on" v-else>
+                                                    <IconField>
+                                                        <InputIcon>
+                                                            <i :class="fieldMeta?.[groupKey]?.[fieldKey]?.[nestedKey]?.icon || 'pi pi-pencil'" />
+                                                        </InputIcon>
+                                                        <InputText
+                                                            v-model="settings.data[groupKey][fieldKey][nestedKey]"
+                                                            v-tooltip.focus.top="i18n[groupKey + '.' + fieldKey + '.' + nestedKey]?.tooltip || ''"
+                                                            :class="{ 'changed-field': isChanged(groupKey, fieldKey, nestedKey) }"
+                                                            class="w-full"
+                                                        />
+                                                    </IconField>
+                                                    <label>
+                                                        {{ i18n[groupKey + '.' + fieldKey + '.' + nestedKey]?.label || nestedKey.replace(/_/g, ' ') }}
+                                                    </label>
+                                                </FloatLabel>
+                                            </div>
+                                        </template>
                                     </Panel>
                                 </div>
 
                                 <!-- Primitive value -->
-                                <div v-else class="mb-4">
+                                <div v-else-if="!isHidden(groupKey + '.' + fieldKey)" class="mb-4">
                                     <template v-if="typeof value === 'boolean'">
                                         <div class="setting-option_boolean flex items-center justify-between shadow-sm">
                                             <span class="flex items-center gap-2 font-medium capitalize">
@@ -1581,7 +1582,8 @@
                                 </div>
                             </div>
                         </div>
-                    </Panel>
+                        </Panel>
+                    </template>
                 </ScrollPanel>
             </transition>
 
@@ -1658,6 +1660,32 @@
                 for (const key in this.panelStates) {
                     this.panelStates[key] = state;
                 }
+            },
+            isHidden(path) {
+                if (!path) {
+                    return false;
+                }
+
+                const segments = path.split('.');
+                let meta = this.fieldMeta;
+
+                for (const segment of segments) {
+                    if (!meta || typeof meta !== 'object') {
+                        return false;
+                    }
+
+                    if (!(segment in meta)) {
+                        return false;
+                    }
+
+                    meta = meta[segment];
+                }
+
+                if (meta && typeof meta === 'object' && Object.prototype.hasOwnProperty.call(meta, 'hidden')) {
+                    return !!meta.hidden;
+                }
+
+                return false;
             },
             saveSettings() {
                 this.saving_settings = true;

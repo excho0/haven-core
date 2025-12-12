@@ -153,18 +153,25 @@ class ArrayHelpers
                     'tooltip' => $def['tooltip'] ?? '',
                     'icon'    => $def['icon'] ?? '',
                 ];
+
+                if (array_key_exists('hidden', $def)) {
+                    $out[$key]['hidden'] = (bool) $def['hidden'];
+                }
             }
     
             // Group or subsection
             else {
                 $out[$key] = self::extractUiMeta($def);
-    
+
                 // Preserve group-level metadata directly
                 if (isset($def['icon'])) {
                     $out[$key]['icon'] = $def['icon'];
                 }
                 if (isset($def['tooltip'])) {
                     $out[$key]['tooltip'] = $def['tooltip'];
+                }
+                if (array_key_exists('hidden', $def)) {
+                    $out[$key]['hidden'] = (bool) $def['hidden'];
                 }
             }
         }

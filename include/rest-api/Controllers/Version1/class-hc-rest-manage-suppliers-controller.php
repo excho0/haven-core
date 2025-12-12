@@ -9,6 +9,7 @@ use WP_Error;
 use HavenCore\Services\HC_Supplier_Service;
 use HavenCore\Utils\UserUtils;
 use HavenCore\Classes\HC_Settings;
+use HavenCore\Settings\Notifications;
 
 /**
  * Class HC_REST_Manage_Suppliers_V1_Controller
@@ -223,7 +224,7 @@ class HC_REST_Manage_Suppliers_V1_Controller extends HC_REST_Controller {
 		}
 
 		$settings = new HC_Settings();
-		if ($settings->get('notifications.supplier_welcome_email', true)) {
+		if (Notifications::supplierWelcomeEmailEnabled()) {
 			HC_Supplier_Service::scheduleWelcomeEmail($email, $name, $supplier->get_id(), $supplier->get_password());
 		}
 

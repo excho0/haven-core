@@ -2,8 +2,9 @@
 
 namespace HavenCore\Hooks;
 
-use HavenCore\Classes\HC_Settings;
 use HavenCore\Services\EmailVerificationService;
+use HavenCore\Settings\General;
+use HavenCore\Settings\Notifications;
 
 /**
  * Class WP_Hooks
@@ -21,11 +22,9 @@ class WP_Hooks
      */
     public static function register(): void
     {
-        $settings = new HC_Settings();
-
         if (
-            !$settings->get('general.password_reset_page', false) ||
-            !$settings->get('notifications.customer_password_reset_email', true)
+            !General::passwordResetPageEnabled() ||
+            !Notifications::customerPasswordResetEmailEnabled()
         ) {
             return;
         }
@@ -88,8 +87,7 @@ class WP_Hooks
      */
     public static function sendWooPasswordResetEmail($user_login, $reset_key): void
     {
-        $settings = new HC_Settings();
-        if (!$settings->get('notifications.customer_password_reset_email', true)) {
+        if (!Notifications::customerPasswordResetEmailEnabled()) {
             return;
         }
 
