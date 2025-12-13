@@ -559,7 +559,12 @@
                         return group.carrier_name || code;
                     },
                     shouldTrackUnread() {
-                        return this.$route?.path !== '/communications';
+                        if (this.$route?.name === 'communications') {
+                            return false;
+                        }
+
+                        const hash = window.location.hash || '';
+                        return !hash.startsWith('#/communications');
                     },
                     async fetchUnreadSummary({ silent = false, force = false } = {}) {
                         if (!force && !this.shouldTrackUnread()) {
@@ -579,6 +584,24 @@
                                 console.error('Failed to fetch unread summary', err);
                             }
                         }
+                    },
+                    navigateToOrder(orderId) {
+                        if (!orderId || !this.$router) {
+                            return;
+                        }
+
+                        this.$router.push({ name: 'orders', query: { order_id: orderId } });
+                    },
+                    isRouteActive(route) {
+                        if (!this.$route) {
+                            return false;
+                        }
+
+                        if (route === '/communications') {
+                            return this.$route?.path?.startsWith('/communications');
+                        }
+
+                        return this.$route.path === route;
                     },
                     startUnreadPolling() {
                         this.stopUnreadPolling();
@@ -603,7 +626,16 @@
                         this.unreadPoller = null;
                     },
                     showUnreadBadge(item) {
-                        return item.route === '/communications' && this.hasUnreadCommunications;
+                        if (!item?.route) {
+                            return false;
+                        }
+
+                        if (item.route === '/communications') {
+                            const active = this.isRouteActive('/communications');
+                            return !active && this.hasUnreadCommunications;
+                        }
+
+                        return false;
                     },
                     manageUnreadPolling() {
                         if (this.shouldTrackUnread()) {
@@ -3187,6 +3219,7 @@
                         autoRefreshPoller: null,
                         userLocale: navigator?.language || navigator?.userLanguage || 'en-US',
                         dateFormatOptions: { dateStyle: 'medium', timeStyle: 'short' },
+                        pendingConversationId: null,
                     };
                 },
                 inject: ['i18n', 'isAdmin', 'currentUser', 'isRtl'],
@@ -3217,6 +3250,7 @@
                     }
                 },
                 mounted() {
+                    this.applyConversationFromRoute();
                     this.fetchConversations();
                     this.fetchSuppliers();
                     this.startAutoRefresh();
@@ -3229,6 +3263,12 @@
                         if (val && !this.supplierOptions.length) {
                             this.fetchSuppliers();
                         }
+                    },
+                    '$route.params.conversationId'(newVal, oldVal) {
+                        if (newVal === oldVal) {
+                            return;
+                        }
+                        this.applyConversationFromRoute(true);
                     },
                     'newConversation.supplier_id'(newVal) {
                         if (!newVal) {
@@ -3309,10 +3349,11 @@
                                 method: 'GET',
                             });
                             this.conversations = response?.conversations || [];
+                            this.applyConversationFromRoute(true);
                             if (this.selectedConversationId) {
                                 const exists = this.conversations.some(c => c.id === this.selectedConversationId);
                                 if (!exists) {
-                                    this.selectedConversationId = null;
+                                    this.deselectConversation();
                                     this.messages = [];
                                 }
                             }
@@ -3335,10 +3376,14 @@
                             return;
                         }
                         this.selectedConversationId = conversation.id;
+                        this.pendingConversationId = conversation.id;
+                        this.updateConversationRoute(conversation.id);
                         this.fetchMessages(conversation.id, { scrollToLatest: true });
                     },
                     deselectConversation() {
                         this.selectedConversationId = null;
+                        this.pendingConversationId = null;
+                        this.updateConversationRoute(null);
                     },
                     async fetchMessages(conversationId, options = {}) {
                         const {
@@ -3475,14 +3520,11 @@
                         if (conversation.status) {
                             parts.push(conversation.status);
                         }
-                        if (conversation.order_id) {
-                            parts.push(`#${conversation.order_id}`);
+                        if (conversation.last_message_at) {
+                            parts.push(this.formatDateTime(conversation.last_message_at));
                         }
-                    if (conversation.last_message_at) {
-                        parts.push(this.formatDateTime(conversation.last_message_at));
-                    }
-                    return parts.join(' • ');
-                },
+                        return parts.join(' • ');
+                    },
                     conversationSupplierName(conversation) {
                         const name =
                             conversation?.supplier_name ||
@@ -3519,11 +3561,101 @@
                             .slice(0, 2)
                             .toUpperCase();
                     },
+                    applyConversationFromRoute(triggerFetch = false) {
+                        const param = this.$route?.params?.conversationId ?? this.pendingConversationId;
+
+                        if (!param) {
+                            this.pendingConversationId = null;
+                            if (this.selectedConversationId) {
+                                this.selectedConversationId = null;
+                                if (triggerFetch) {
+                                    this.messages = [];
+                                }
+                            }
+                            return;
+                        }
+
+                        const parsed = parseInt(param, 10);
+                        if (!Number.isFinite(parsed)) {
+                            this.pendingConversationId = null;
+                            return;
+                        }
+
+                        this.pendingConversationId = parsed;
+
+                        const conversation = this.conversations.find(c => c.id === parsed);
+                        if (!conversation) {
+                            return;
+                        }
+
+                        if (this.selectedConversationId !== conversation.id) {
+                            this.selectedConversationId = conversation.id;
+                            triggerFetch = true;
+                        }
+
+                        const hasMessagesForConversation = this.messages.length
+                            ? this.messages[this.messages.length - 1]?.conversation_id === conversation.id
+                            : false;
+                        if (triggerFetch && !hasMessagesForConversation) {
+                            this.fetchMessages(conversation.id, { scrollToLatest: true });
+                        }
+
+                        this.pendingConversationId = null;
+                    },
+                    conversationOrderId(conversation) {
+                        const raw = conversation?.order_id;
+                        if (raw === null || raw === undefined || raw === '') {
+                            return null;
+                        }
+                        const parsed = parseInt(raw, 10);
+                        return Number.isFinite(parsed) ? parsed : null;
+                    },
+                    conversationOrderLabel(conversation) {
+                        const orderId = this.conversationOrderId(conversation);
+                        if (!orderId) {
+                            return '';
+                        }
+                        const label = this.i18n.order || 'Order';
+
+                        return `${!this.mobile ? label + ' ' : ''}#${orderId}`;
+                    },
                     conversationAvatarUrl(conversation) {
                         if (this.isAdmin) {
                             return conversation?.supplier_avatar_url || null;
                         }
                         return conversation?.admin_avatar_url || null;
+                    },
+                    updateConversationRoute(conversationId) {
+                        if (!this.$router) {
+                            return;
+                        }
+
+                        const currentId = this.$route?.params?.conversationId ?? null;
+                        const query = { ...(this.$route?.query || {}) };
+
+                        if (conversationId) {
+                            const nextId = String(conversationId);
+                            if (currentId === nextId) {
+                                return;
+                            }
+                            this.pendingConversationId = conversationId;
+                            this.$router.replace({ name: 'communications', params: { conversationId: nextId }, query });
+                            return;
+                        }
+
+                        if (!currentId) {
+                            return;
+                        }
+
+                        this.pendingConversationId = null;
+                        this.$router.replace({ name: 'communications', params: { conversationId: undefined }, query });
+                    },
+                    navigateToOrder(orderId) {
+                        if (!orderId || !this.$router) {
+                            return;
+                        }
+
+                        this.$router.push({ name: 'orders', query: { order_id: orderId } });
                     },
                     isSelected(conversation) {
                         return this.selectedConversationId === conversation.id;
@@ -3902,20 +4034,19 @@
                                             text
                                             @click="deselectConversation"
                                         />
-                                        <div>
+                                        <div class="flex flex-col">
                                             <h2 class="text-lg font-semibold">{{ conversationTitle(selectedConversation) }}</h2>
                                             <p class="text-xs text-muted-color">{{ conversationMeta(selectedConversation) }}</p>
                                         </div>
                                     </div>
-                                    <div class="flex items-center gap-2 flex-wrap">
+                                    <div class="flex items-center gap-2">
                                         <Button
-                                            v-if="isAdmin"
-                                            :label="i18n.delete_conversation"
-                                            icon="pi pi-trash"
+                                            v-if="conversationOrderId(selectedConversation)"
+                                            :label="conversationOrderLabel(selectedConversation)"
+                                            icon="pi pi-shopping-cart"
+                                            severity="contrast"
                                             size="small"
-                                            severity="danger"
-                                            :loading="deleteLoading"
-                                            @click="confirmDeleteConversation"
+                                            @click="navigateToOrder(conversationOrderId(selectedConversation))"
                                         />
                                     </div>
                                 </div>
@@ -4189,7 +4320,7 @@
 
                 },
                 { 
-                    path: '/communications', 
+                    path: '/communications/:conversationId?', 
                     name: 'communications',
                     component: Communications,
                     meta: { title: initialData.i18n.communications }
@@ -4197,7 +4328,7 @@
                 {
                     path: '/change-password',
                     name: 'change-password',
-                    component: ChangePassword, // Replace with your actual component
+                    component: ChangePassword,
                 },
                 {
                     path: '/products', 
@@ -4335,10 +4466,12 @@
                                 <!-- Sidebar items -->
                                 <ul v-if="currentUser.attributes && !currentUser.attributes.needs_to_change_password" class="list-none m-0 p-4 space-y-2  text-sm flex-grow shrink-0">
                                     <li v-for="(item, index) in sidebarItems" :key="index" style="line-height: 1rem;">
-                                        <router-link 
-                                            :to="item.route" 
-                                            class="aside-link"
-                                            active-class="aside-link-active"
+                                    <router-link 
+                                        :to="item.route" 
+                                        class="aside-link"
+                                        :class="{
+                                            'aside-link-active': isRouteActive(item.route)
+                                        }"
                                             v-tooltip="isCollapsed ? item.name : ''" 
 
                                         >
@@ -4394,12 +4527,14 @@
                                 >
                                     <ul class="list-none m-0 p-4 space-y-2  text-sm flex-grow">
                                         <li v-for="(item, index) in sidebarItems" :key="index">
-                                            <router-link 
-                                                :to="item.route" 
-                                                class="aside-link"
-                                                active-class="aside-link-active"
-                                                @click="closeSidebar"
-                                            >
+                                    <router-link 
+                                        :to="item.route" 
+                                        class="aside-link"
+                                        :class="{
+                                            'aside-link-active': isRouteActive(item.route)
+                                        }"
+                                        @click="closeSidebar"
+                                    >
                                                 <span class="relative inline-flex items-center">
                                                     <i :class="item.icon + ' transform-none'"></i>
                                                 </span>
@@ -4422,7 +4557,7 @@
                                     <transition name="card-swap">
                                         <component
                                             :is="Component"
-                                            :key="$route.fullPath"
+                                            :key="$route.name || 'route-view'"
                                             class="app-content-styled h-full overflow-y-hidden"
                                         />
                                     </transition>
@@ -4540,6 +4675,12 @@
                     showUnreadBadge(item) {
                         if (typeof this.$root?.showUnreadBadge === 'function') {
                             return this.$root.showUnreadBadge(item);
+                        }
+                        return false;
+                    },
+                    isRouteActive(route) {
+                        if (typeof this.$root?.isRouteActive === 'function') {
+                            return this.$root.isRouteActive(route);
                         }
                         return false;
                     },

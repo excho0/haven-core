@@ -175,6 +175,10 @@ class HC_REST_Supplier_Messaging_V1_Controller extends HC_REST_Controller {
 
 		$conversations = $this->messaging_service()->fetchConversations( $args );
 
+		if ( $this->is_admin_user() && ! empty( $conversations ) ) {
+			$conversations = $this->append_order_data_to_conversations( $conversations );
+		}
+
 		return new WP_REST_Response(
 			[
 				'conversations' => $conversations,
@@ -262,12 +266,18 @@ class HC_REST_Supplier_Messaging_V1_Controller extends HC_REST_Controller {
 			]
 		);
 
+		$order = null;
+		if ( $this->is_admin_user() && ! empty( $conversation['order_id'] ) ) {
+			$order = $this->prepare_order_payload( (int) $conversation['order_id'] );
+		}
+
 		return new WP_REST_Response(
 			[
 				'messages' => $messages,
 				'count'    => count( $messages ),
 				'page'     => $page,
 				'per_page' => $per_page,
+				'order'    => $order,
 			]
 		);
 	}
@@ -357,6 +367,73 @@ class HC_REST_Supplier_Messaging_V1_Controller extends HC_REST_Controller {
 
 		$current = wp_get_current_user();
 		return (int) $conversation['supplier_id'] === (int) $current->ID;
+	}
+
+	/**
+	 * Append WooCommerce order data to each conversation when available.
+	 *
+	 * @param array<int, array> $conversations Conversations list.
+	 *
+	 * @return array<int, array>
+	 */
+	private function append_order_data_to_conversations( array $conversations ): array {
+		$order_cache = [];
+
+		foreach ( $conversations as &$conversation ) {
+			$order_id = isset( $conversation['order_id'] ) ? (int) $conversation['order_id'] : 0;
+			if ( $order_id <= 0 ) {
+				$conversation['order'] = null;
+				continue;
+			}
+
+			if ( ! array_key_exists( $order_id, $order_cache ) ) {
+				$order_cache[ $order_id ] = $this->prepare_order_payload( $order_id );
+			}
+
+			$conversation['order'] = $order_cache[ $order_id ];
+		}
+
+		unset( $conversation );
+
+		return $conversations;
+	}
+
+	/**
+	 * Prepare an order payload for API responses.
+	 *
+	 * @param int $order_id WooCommerce order ID.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	private function prepare_order_payload( int $order_id ): ?array {
+		if ( $order_id <= 0 ) {
+			return null;
+		}
+
+		if ( ! function_exists( 'wc_get_order' ) ) {
+			return null;
+		}
+
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) {
+			return null;
+		}
+
+		$edit_url = $order->get_edit_order_url();
+
+		return [
+			'id'               => $order->get_id(),
+			'number'           => $order->get_order_number(),
+			'status'           => $order->get_status(),
+			'total'            => $order->get_total(),
+			'currency'         => $order->get_currency(),
+			'formatted_total'  => $order->get_formatted_order_total(),
+			'date_created'     => $order->get_date_created() ? $order->get_date_created()->date_i18n( DATE_ATOM ) : null,
+			'customer_id'      => $order->get_customer_id(),
+			'payment_method'   => $order->get_payment_method(),
+			'shipping_method'  => $order->get_shipping_method(),
+			'edit_url'         => $edit_url ?: admin_url( 'post.php?post=' . $order->get_id() . '&action=edit' ),
+		];
 	}
 
 	private function messaging_service(): HC_Messaging_Service {

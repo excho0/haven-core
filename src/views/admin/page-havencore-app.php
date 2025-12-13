@@ -205,7 +205,12 @@
         },
         methods: {
             shouldTrackUnread() {
-                return this.$route?.path !== '/communications';
+                if (this.$route?.name === 'communications') {
+                    return false;
+                }
+
+                const hash = window.location.hash || '';
+                return !hash.startsWith('#/communications');
             },
             async fetchUnreadSummary({ silent = false, force = false } = {}) {
                 if (!force && !this.shouldTrackUnread()) {
@@ -278,7 +283,11 @@
                 this.unreadPoller = null;
             },
             showUnreadBadge(item) {
-                return item.route === '/communications' && this.hasUnreadCommunications;
+                if (item.route === '/communications') {
+                    const active = this.isRouteActive('/communications');
+                    return !active && this.hasUnreadCommunications;
+                }
+                return this.isRouteActive(item.route) && this.hasUnreadCommunications;
             },
             manageUnreadPolling() {
                 if (this.shouldTrackUnread()) {
@@ -287,6 +296,17 @@
                 } else {
                     this.stopUnreadPolling();
                 }
+            },
+            isRouteActive(route) {
+                if (!this.$route) {
+                    return false;
+                }
+
+                if (route === '/communications') {
+                    return this.$route?.path?.startsWith('/communications');
+                }
+
+                return this.$route?.path === route;
             },
         },
         mounted() {
@@ -388,6 +408,7 @@
                 autoRefreshPoller: null,
                 userLocale: navigator?.language || navigator?.userLanguage || 'en-US',
                 dateFormatOptions: { dateStyle: 'medium', timeStyle: 'short' },
+                pendingConversationId: null,
             };
         },
         inject: ['i18n', 'isAdmin', 'currentUser', 'isRtl'],
@@ -411,6 +432,7 @@
             }
         },
         mounted() {
+            this.applyConversationFromRoute();
             this.fetchConversations();
             this.fetchSuppliers();
             this.startAutoRefresh();
@@ -423,6 +445,12 @@
                 if (val && !this.supplierOptions.length) {
                     this.fetchSuppliers();
                 }
+            },
+            '$route.params.conversationId'(newVal, oldVal) {
+                if (newVal === oldVal) {
+                    return;
+                }
+                this.applyConversationFromRoute(true);
             },
             'newConversation.supplier_id'(newVal) {
                 if (!newVal) {
@@ -485,10 +513,11 @@
                         method: 'GET',
                     });
                     this.conversations = response?.conversations || [];
+                    this.applyConversationFromRoute(true);
                     if (this.selectedConversationId) {
                         const exists = this.conversations.some(c => c.id === this.selectedConversationId);
                         if (!exists) {
-                            this.selectedConversationId = null;
+                            this.deselectConversation();
                             this.messages = [];
                         }
                     }
@@ -511,10 +540,14 @@
                     return;
                 }
                 this.selectedConversationId = conversation.id;
+                this.pendingConversationId = conversation.id;
+                this.updateConversationRoute(conversation.id);
                 this.fetchMessages(conversation.id, { scrollToLatest: true });
             },
             deselectConversation() {
                 this.selectedConversationId = null;
+                this.pendingConversationId = null;
+                this.updateConversationRoute(null);
             },
             async fetchMessages(conversationId, options = {}) {
                 const {
@@ -645,9 +678,6 @@
                 if (conversation.status) {
                     parts.push(conversation.status);
                 }
-                if (conversation.order_id) {
-                    parts.push(`#${conversation.order_id}`);
-                }
                 if (conversation.last_message_at) {
                     parts.push(this.formatDateTime(conversation.last_message_at));
                 }
@@ -685,6 +715,132 @@
                     .join('')
                     .slice(0, 2)
                     .toUpperCase();
+            },
+            conversationOrder(conversation) {
+                if (!conversation) {
+                    return null;
+                }
+
+                if (conversation.order && typeof conversation.order === 'object') {
+                    return conversation.order;
+                }
+
+                const orderId = this.conversationOrderId(conversation);
+                if (!orderId) {
+                    return null;
+                }
+
+                return {
+                    id: orderId,
+                    number: orderId,
+                    edit_url: null,
+                };
+            },
+            conversationOrderId(conversation) {
+                const order = conversation?.order;
+                if (order?.id) {
+                    return parseInt(order.id, 10) || null;
+                }
+
+                const raw = conversation?.order_id;
+                if (raw === null || raw === undefined || raw === '') {
+                    return null;
+                }
+                const parsed = parseInt(raw, 10);
+                return Number.isFinite(parsed) ? parsed : null;
+            },
+            conversationOrderLabel(conversation) {
+                const order = this.conversationOrder(conversation);
+                if (!order) {
+                    return '';
+                }
+                const label = this.i18n.order || 'Order';
+                const orderNumber = order.number || this.conversationOrderId(conversation);
+                const prefix = !this.mobile ? `${label} ` : '';
+                return `${prefix}#${orderNumber}`;
+            },
+            conversationHasOrder(conversation) {
+                return !!this.conversationOrder(conversation);
+            },
+            navigateToOrder(order) {
+                if (!order) {
+                    return;
+                }
+
+                const orderId = order.id || this.conversationOrderId({ order });
+                const editUrl = order.edit_url;
+
+                if (!editUrl) {
+                    return;
+                }
+
+                window.open(editUrl, '_blank', 'noopener');
+            },
+            applyConversationFromRoute(triggerFetch = false) {
+                const param = this.$route?.params?.conversationId ?? this.pendingConversationId;
+
+                if (!param) {
+                    this.pendingConversationId = null;
+                    if (this.selectedConversationId) {
+                        this.selectedConversationId = null;
+                        if (triggerFetch) {
+                            this.messages = [];
+                        }
+                    }
+                    return;
+                }
+
+                const parsed = parseInt(param, 10);
+                if (!Number.isFinite(parsed)) {
+                    this.pendingConversationId = null;
+                    return;
+                }
+
+                this.pendingConversationId = parsed;
+
+                const conversation = this.conversations.find(c => c.id === parsed);
+                if (!conversation) {
+                    return;
+                }
+
+                if (this.selectedConversationId !== conversation.id) {
+                    this.selectedConversationId = conversation.id;
+                    triggerFetch = true;
+                }
+
+                const hasMessages = this.messages.length
+                    ? this.messages[this.messages.length - 1]?.conversation_id === conversation.id
+                    : false;
+                if (triggerFetch && !hasMessages) {
+                    this.fetchMessages(conversation.id, { scrollToLatest: true });
+                }
+
+                this.pendingConversationId = null;
+            },
+            updateConversationRoute(conversationId) {
+                if (!this.$router) {
+                    return;
+                }
+
+                const currentId = this.$route?.params?.conversationId ?? null;
+                const query = { ...(this.$route?.query || {}) };
+
+                if (conversationId) {
+                    const nextId = String(conversationId);
+                    if (currentId === nextId) {
+                        return;
+                    }
+                    this.pendingConversationId = conversationId;
+                    this.$router.replace({ name: 'communications', params: { conversationId: nextId }, query });
+                    return;
+                }
+
+                if (!currentId) {
+                    return;
+                }
+
+                this.pendingConversationId = null;
+                this.$router.replace({ name: 'communications', params: { conversationId: undefined }, query });
             },
             conversationAvatarUrl(conversation) {
                 if (this.isAdmin) {
@@ -1073,8 +1229,16 @@
                             </div>
                             <div class="flex items-center gap-2 flex-wrap">
                                 <Button
+                                    v-if="conversationHasOrder(selectedConversation)"
+                                    :label="conversationOrderLabel(selectedConversation)"
+                                    icon="pi pi-shopping-cart"
+                                    severity="contrast"
+                                    size="small"
+                                    @click="navigateToOrder(conversationOrder(selectedConversation))"
+                                />
+                                <Button
                                     v-if="isAdmin"
-                                    :label="i18n.delete_conversation"
+                                    :label="!mobile ? i18n.delete_conversation : ''"
                                     icon="pi pi-trash"
                                     size="small"
                                     severity="danger"
@@ -2088,7 +2252,7 @@
             meta: { title: initialData.i18n.settings }
         },
         {
-            path: '/communications',
+            path: '/communications/:conversationId?',
             name: 'communications',
             component: Communications,
             meta: { title: initialData.i18n.communications }
@@ -2199,7 +2363,9 @@
                                 <router-link 
                                     :to="item.route" 
                                     class="aside-link"
-                                    active-class="aside-link-active"
+                                    :class="{
+                                        'aside-link-active': isRouteActive(item.route)
+                                    }"
                                     v-tooltip="isCollapsed ? item.name : ''"
                                 >
                                     <span class="relative inline-flex items-center">
@@ -2257,7 +2423,9 @@
                                     <router-link 
                                         :to="item.route" 
                                         class="aside-link"
-                                        active-class="aside-link-active"
+                                        :class="{
+                                            'aside-link-active': isRouteActive(item.route)
+                                        }"
                                         @click="closeSidebar"
                                     >
                                         <span class="relative inline-flex items-center">
@@ -2282,7 +2450,7 @@
                             <transition name="card-swap">
                                 <component
                                     :is="Component"
-                                    :key="$route.fullPath"
+                                    :key="$route.name || 'route-view'"
                                     class="app-content-styled h-full"
                                 />
                             </transition>
@@ -2338,6 +2506,12 @@
             showUnreadBadge(item) {
                 if (typeof this.$root?.showUnreadBadge === 'function') {
                     return this.$root.showUnreadBadge(item);
+                }
+                return false;
+            },
+            isRouteActive(route) {
+                if (typeof this.$root?.isRouteActive === 'function') {
+                    return this.$root.isRouteActive(route);
                 }
                 return false;
             },
