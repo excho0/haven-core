@@ -2,6 +2,8 @@
 
 namespace HavenCore\Services;
 
+use DateTime;
+use DateTimeZone;
 use wpdb;
 
 defined('ABSPATH') || exit;
@@ -536,7 +538,10 @@ class HC_Messaging_Service
         $row['last_message_sender_id'] = isset($row['last_message_sender_id'])
             ? (int) $row['last_message_sender_id']
             : null;
-        $row['last_message_created_at'] = $row['last_message_created_at'] ?? $row['last_message_at'] ?? null;
+        $row['created_at'] = $this->toIso8601($row['created_at'] ?? null);
+        $row['updated_at'] = $this->toIso8601($row['updated_at'] ?? null);
+        $row['last_message_at'] = $this->toIso8601($row['last_message_at'] ?? null);
+        $row['last_message_created_at'] = $this->toIso8601($row['last_message_created_at'] ?? $row['last_message_at'] ?? null);
 
         return $row;
     }
@@ -548,6 +553,8 @@ class HC_Messaging_Service
         $row['sender_id'] = isset($row['sender_id']) ? (int) $row['sender_id'] : null;
         $row['is_read'] = (bool) $row['is_read'];
         $row['attachments'] = $this->decodeMeta($row['attachments'] ?? null);
+        $row['created_at'] = $this->toIso8601($row['created_at'] ?? null);
+        $row['updated_at'] = $this->toIso8601($row['updated_at'] ?? null);
 
         return $row;
     }
@@ -624,5 +631,24 @@ class HC_Messaging_Service
     private function now(): string
     {
         return current_time('mysql', true);
+    }
+
+    private function toIso8601(?string $value): ?string
+    {
+        if (empty($value)) {
+            return null;
+        }
+
+        $dt = DateTime::createFromFormat('Y-m-d H:i:s', $value, new DateTimeZone('UTC'));
+
+        if (!$dt) {
+            try {
+                $dt = new DateTime($value);
+            } catch (\Exception $e) {
+                return $value;
+            }
+        }
+
+        return $dt->setTimezone(new DateTimeZone('UTC'))->format(DateTime::ATOM);
     }
 }
