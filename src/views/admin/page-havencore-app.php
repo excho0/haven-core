@@ -686,6 +686,12 @@
                     .slice(0, 2)
                     .toUpperCase();
             },
+            conversationAvatarUrl(conversation) {
+                if (this.isAdmin) {
+                    return conversation?.supplier_avatar_url || null;
+                }
+                return conversation?.admin_avatar_url || null;
+            },
             isSelected(conversation) {
                 return this.selectedConversationId === conversation.id;
             },
@@ -773,6 +779,12 @@
             messageAlignmentClass(message) {
                 const side = this.isOwnMessage(message) ? this.viewerMessageSide() : this.otherMessageSide();
                 return side === 'right' ? 'flex-row-reverse text-right' : 'flex-row text-left';
+            },
+            messageAvatarUrl(message) {
+                if (this.isOwnMessage(message)) {
+                    return this.isAdmin ? this.currentUser?.avatar_url || message?.sender_avatar_url || this.selectedConversation?.admin_avatar_url || null : message?.sender_avatar_url || null;
+                }
+                return message?.sender_avatar_url || (this.isAdmin ? this.selectedConversation?.supplier_avatar_url || null : this.selectedConversation?.admin_avatar_url || null);
             },
             senderInitials(message) {
                 const source = this.messageSenderName(message) || '';
@@ -999,8 +1011,17 @@
                                             'conversation-selected': isSelected(conversation)
                                         }"
                                     >
-                                        <div class="conversation-avatar flex-shrink-0">
-                                            {{ conversationListInitials(conversation) }}
+                                        <div
+                                            class="conversation-avatar flex-shrink-0"
+                                            :class="conversationAvatarUrl(conversation) ? 'conversation-avatar--image' : ''"
+                                        >
+                                            <img
+                                                v-if="conversationAvatarUrl(conversation)"
+                                                :src="conversationAvatarUrl(conversation)"
+                                                alt=""
+                                                class="conversation-avatar-image"
+                                            />
+                                            <span v-else>{{ conversationListInitials(conversation) }}</span>
                                         </div>
                                         <div class="flex-1 min-w-0">
                                             <div class="flex items-center justify-between gap-2">
@@ -1142,9 +1163,18 @@
                                             >
                                                 <div
                                                     class="chat-avatar"
-                                                    :class="isOwnMessage(message) ? 'chat-avatar--self' : 'chat-avatar--other'"
+                                                    :class="[
+                                                        isOwnMessage(message) ? 'chat-avatar--self' : 'chat-avatar--other',
+                                                        messageAvatarUrl(message) ? 'chat-avatar--image' : ''
+                                                    ]"
                                                 >
-                                                    {{ senderInitials(message) }}
+                                                    <img
+                                                        v-if="messageAvatarUrl(message)"
+                                                        :src="messageAvatarUrl(message)"
+                                                        alt=""
+                                                        class="chat-avatar-image"
+                                                    />
+                                                    <span v-else>{{ senderInitials(message) }}</span>
                                                 </div>
                                                 <Card
                                                     class="w-full chat-bubble-card"

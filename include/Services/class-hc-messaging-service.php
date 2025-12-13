@@ -543,6 +543,18 @@ class HC_Messaging_Service
         $row['last_message_at'] = $this->toIso8601($row['last_message_at'] ?? null);
         $row['last_message_created_at'] = $this->toIso8601($row['last_message_created_at'] ?? $row['last_message_at'] ?? null);
 
+        $row['supplier_avatar_url'] = $this->getAvatarUrl((int) ($row['supplier_id'] ?? 0));
+        $row['admin_avatar_url'] = $this->getAvatarUrl((int) ($row['admin_user_id'] ?? 0), get_option('admin_email'));
+
+        $lastSenderType = $row['last_message_sender_type'] ?? null;
+        if ('supplier' === $lastSenderType) {
+            $row['last_message_sender_avatar_url'] = $row['supplier_avatar_url'];
+        } elseif ('admin' === $lastSenderType) {
+            $row['last_message_sender_avatar_url'] = $row['admin_avatar_url'];
+        } else {
+            $row['last_message_sender_avatar_url'] = null;
+        }
+
         return $row;
     }
 
@@ -555,6 +567,7 @@ class HC_Messaging_Service
         $row['attachments'] = $this->decodeMeta($row['attachments'] ?? null);
         $row['created_at'] = $this->toIso8601($row['created_at'] ?? null);
         $row['updated_at'] = $this->toIso8601($row['updated_at'] ?? null);
+        $row['sender_avatar_url'] = $this->resolveSenderAvatarUrl($row);
 
         return $row;
     }
@@ -580,14 +593,21 @@ class HC_Messaging_Service
             $user = get_userdata($senderId);
             if ($user) {
                 $message['sender_name'] = $user->display_name ?: $user->user_login ?: $user->user_email;
+                $message['sender_avatar_url'] = $this->getAvatarUrl($senderId, $user->user_email ?? null);
                 return $message;
             }
         }
 
         if ('supplier' === $senderType) {
             $message['sender_name'] = __('Supplier', HAVEN_CORE_TEXT_DOMAIN);
+            if (!$message['sender_avatar_url'] && $conversation) {
+                $message['sender_avatar_url'] = $conversation['supplier_avatar_url'] ?? null;
+            }
         } else {
             $message['sender_name'] = __('Store Admin', HAVEN_CORE_TEXT_DOMAIN);
+            if (!$message['sender_avatar_url']) {
+                $message['sender_avatar_url'] = $conversation['admin_avatar_url'] ?? $this->getAvatarUrl((int) ($conversation['admin_user_id'] ?? 0), get_option('admin_email'));
+            }
         }
 
         return $message;
@@ -631,6 +651,83 @@ class HC_Messaging_Service
     private function now(): string
     {
         return current_time('mysql', true);
+    }
+
+    private function getAvatarUrl(?int $userId, ?string $fallbackEmail = null): ?string
+    {
+        if ($userId) {
+            $url = $this->resolveAvatarUrl($userId, null);
+            if ($url) {
+                return $url;
+            }
+
+            $user = get_userdata($userId);
+            if ($user && !empty($user->user_email)) {
+                $url = $this->resolveAvatarUrl(null, $user->user_email);
+                if ($url) {
+                    return $url;
+                }
+            }
+        }
+
+        if ($fallbackEmail) {
+            $url = $this->resolveAvatarUrl(null, $fallbackEmail);
+            if ($url) {
+                return $url;
+            }
+        }
+
+        return null;
+    }
+
+    private function resolveSenderAvatarUrl(array $message): ?string
+    {
+        $senderId = isset($message['sender_id']) ? (int) $message['sender_id'] : 0;
+        $senderType = $message['sender_type'] ?? '';
+
+        if ($senderId) {
+            $url = $this->getAvatarUrl($senderId);
+            if ($url) {
+                return $url;
+            }
+        }
+
+        if ('admin' === $senderType) {
+            return $this->getAvatarUrl(null, get_option('admin_email'));
+        }
+
+        return null;
+    }
+
+    private function resolveAvatarUrl($userIdOrEmail, ?string $email = null): ?string
+    {
+        $target = $userIdOrEmail ?: $email;
+        if (!$target) {
+            return null;
+        }
+
+        $data = get_avatar_data($target, ['size' => 128]);
+        $url = $data['url'] ?? null;
+        $found = (bool) ($data['found_avatar'] ?? false);
+
+        if (!$url || !$found) {
+            if (isset($data['class']) && is_array($data['class']) && in_array('avatar-default', $data['class'], true)) {
+                return null;
+            }
+        }
+
+        if (!$url) {
+            return null;
+        }
+
+        $normalized = strtolower($url);
+        if (false !== strpos($normalized, 'gravatar.com/avatar/')) {
+            if (preg_match('/[&?]d=(?:mm|mp|mystery|identicon|retro|blank)/', $normalized)) {
+                return null;
+            }
+        }
+
+        return $url;
     }
 
     private function toIso8601(?string $value): ?string
