@@ -921,19 +921,17 @@ even if global styles (like from WP admin) interfere with checkboxes/radios */
     width: 100%;
     padding-top: 0.9rem;
     display: flex;
+    margin-bottom: 0.75rem;
 }
 
 .chat-message-row--other {
-    justify-content: flex-start;
-}
-
-.chat-message-row--self {
     justify-content: flex-end;
 }
 
-.chat-message-inner {
-    width: min(520px, 50%);
+.chat-message-row--self {
+    justify-content: flex-start;
 }
+
 
 .chat-message-row--other .chat-message-inner {
     margin-right: auto;
@@ -943,9 +941,58 @@ even if global styles (like from WP admin) interfere with checkboxes/radios */
     margin-left: auto;
 }
 
-@media (max-width: 768px) {
+.messages-layout-viewer-right .chat-message-row--self {
+    justify-content: flex-end;
+}
+
+.messages-layout-viewer-right .chat-message-row--other {
+    justify-content: flex-start;
+}
+
+.chat-message-inner-base {
+    width: 100%;
+}
+
+
+.chat-message-inner--self {
+    flex-direction: row;
+    text-align: left;
+}
+
+.chat-message-inner--other {
+    flex-direction: row-reverse;
+    text-align: right;
+}
+
+.messages-layout-viewer-right .chat-message-inner--self {
+    flex-direction: row-reverse;
+    text-align: right;
+}
+
+.messages-layout-viewer-right .chat-message-inner--other {
+    flex-direction: row;
+    text-align: left;
+}
+
+.chat-message-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.chat-message-inner {
+    width: min(520px, 50%);
+}
+
+@media (max-width: 992px) {
     .chat-message-inner {
-        width: 100%;
+        width: min(520px, 70%);
+    }
+}
+
+@media (max-width: 640px) {
+    .chat-message-inner {
+        width: 70%;
     }
 }
 
@@ -1070,6 +1117,16 @@ even if global styles (like from WP admin) interfere with checkboxes/radios */
         background: rgba(148, 163, 184, 0.15);
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
     }
+}
+
+/* Messages pane fade-in */
+.messages-pane {
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.messages-pane--ready {
+    opacity: 1;
 }
 /* 
 // END

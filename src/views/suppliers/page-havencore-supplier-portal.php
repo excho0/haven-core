@@ -522,6 +522,7 @@
                         currentUser: this.currentUser,
                         mobileIcon: this.mobileIcon,
                         isAdmin: false,
+                        isRtl: this.isRtl,
                     };
                 },
                 computed: {
@@ -3165,6 +3166,7 @@
                         messages: [],
                         messagesLoading: false,
                         messagesError: null,
+                        messagesPaneReady: false,
                         newMessage: '',
                         sendingMessage: false,
                         newConversationVisible: false,
@@ -3187,7 +3189,7 @@
                         dateFormatOptions: { dateStyle: 'medium', timeStyle: 'short' },
                     };
                 },
-                inject: ['i18n', 'isAdmin', 'currentUser'],
+                inject: ['i18n', 'isAdmin', 'currentUser', 'isRtl'],
                 computed: {
                     mobile() {
                         const store = useGlobalStore();
@@ -3208,6 +3210,10 @@
                         return {
                             maxHeight: this.mobile ? '60dvh' : '65vh'
                         };
+                    },
+                    messagesLayoutClass() {
+                        const side = this.viewerMessageSide();
+                        return side === 'right' ? 'messages-layout-viewer-right' : 'messages-layout-viewer-left';
                     }
                 },
                 mounted() {
@@ -3344,6 +3350,7 @@
                         const showSpinner = !silent;
                         if (showSpinner) {
                             this.messagesLoading = true;
+                            this.messagesPaneReady = false;
                         }
                         this.messagesError = null;
                         const previousLast = this.messages.length ? this.messages[this.messages.length - 1] : null;
@@ -3373,6 +3380,11 @@
                         } finally {
                             if (showSpinner) {
                                 this.messagesLoading = false;
+                            }
+                            if (this.selectedConversationId === conversationId) {
+                                setTimeout(() => {
+                                    this.messagesPaneReady = true;
+                                }, 600);
                             }
                         }
                     },
@@ -3408,6 +3420,7 @@
                                     this.fetchConversations();
                                 }
                                 this.scrollMessagesToBottom('smooth');
+                                this.messagesPaneReady = true;
                             }
                         } catch (err) {
                             console.error('Failed to send message', err);
@@ -3513,6 +3526,12 @@
                         const senderType = (message?.sender_type || '').toLowerCase();
                         return this.isAdmin ? senderType === 'admin' : senderType === 'supplier';
                     },
+                    viewerMessageSide() {
+                        return this.isRtl ? 'right' : 'left';
+                    },
+                    otherMessageSide() {
+                        return this.viewerMessageSide() === 'left' ? 'right' : 'left';
+                    },
                     conversationTimestamp(conversation) {
                         return this.formatDateTime(conversation?.last_message_at);
                     },
@@ -3596,15 +3615,23 @@
                         return initials || '•';
                     },
                     messageAlignmentClass(message) {
-                        return this.isOwnMessage(message)
-                            ? 'flex-row-reverse text-right'
-                            : 'flex-row';
+                        const side = this.isOwnMessage(message) ? this.viewerMessageSide() : this.otherMessageSide();
+                        return side === 'right' ? 'flex-row-reverse text-right' : 'flex-row text-left';
                     },
                     messageRowClass(message) {
-                        return this.isOwnMessage(message) ? 'chat-message-row--self' : 'chat-message-row--other';
+                        const side = this.isOwnMessage(message) ? this.viewerMessageSide() : this.otherMessageSide();
+                        return side === 'right' ? 'chat-message-row--self' : 'chat-message-row--other';
                     },
                     formatMessageDate(date) {
-                        return this.formatDateTime(date);
+                        if (!date) {
+                            return '';
+                        }
+                        try {
+                            const value = date instanceof Date ? date : new Date(date);
+                            return new Intl.DateTimeFormat(this.userLocale, { timeStyle: 'short' }).format(value);
+                        } catch (err) {
+                            return this.formatDateTime(date);
+                        }
                     },
                     async fetchSuppliers() {
                         if (!this.isAdmin) {
@@ -3870,7 +3897,15 @@
                                 <Divider class="my-0" />
 
                                 <div
-                                    class="flex-1 overflow-y-auto p-4 space-y-1 min-h-[250px]"
+                                    :class="[
+                                        'flex-1 overflow-y-auto space-y-1 min-h-[250px]',
+                                        messagesLayoutClass,
+                                        {
+                                            'messages-pane': !messagesLoading && selectedConversation,
+                                            'messages-pane--ready': messagesPaneReady && !messagesLoading && selectedConversation,
+                                            'p-2': !mobile
+                                        }
+                                    ]"
                                     :style="messageContainerStyle"
                                     ref="messagesContainer"
                                 >
@@ -3885,7 +3920,10 @@
                                                 >
                                                     <div
                                                         class="chat-message-inner flex items-start gap-3 max-w-full"
-                                                        :class="messageAlignmentClass({ sender_type: n % 2 === 0 ? 'admin' : 'supplier' })"
+                                                        :class="[
+                                                            'chat-message-inner-base',
+                                                            messageAlignmentClass({ sender_type: n % 2 === 0 ? 'admin' : 'supplier' })
+                                                        ]"
                                                     >
                                                         <div
                                                             class="chat-avatar"
@@ -3933,7 +3971,10 @@
                                                 >
                                                     <div
                                                         class="chat-message-inner flex items-start gap-3 max-w-full"
-                                                        :class="messageAlignmentClass(message)"
+                                                        :class="[
+                                                            'chat-message-inner-base',
+                                                            messageAlignmentClass(message)
+                                                        ]"
                                                     >
                                                         <div
                                                             class="chat-avatar"
@@ -3945,16 +3986,27 @@
                                                             class="w-full chat-bubble-card"
                                                             :class="isOwnMessage(message) ? 'chat-bubble-card--self' : 'chat-bubble-card--other'"
                                                         >
+
                                                             <template #title>
-                                                                <div class="flex items-center justify-between gap-3 text-[11px] uppercase tracking-wide opacity-80">
+                                                                <div
+                                                                    class="flex items-center gap-3 uppercase tracking-wide opacity-80"
+                                                                    :class="isOwnMessage(message) ? 'justify-start' : 'justify-end'"
+                                                                >
                                                                     <span class="font-semibold truncate">{{ messageSenderName(message) }}</span>
-                                                                    <span class="whitespace-nowrap">{{ formatMessageDate(message.created_at) }}</span>
                                                                 </div>
                                                             </template>
                                                             <template #content>
-                                                                <p class="whitespace-pre-line text-sm leading-relaxed m-0">
+                                                                <p class="chat-message-text text-md leading-relaxed m-0">
                                                                     {{ message.message }}
                                                                 </p>
+                                                            </template>
+                                                            <template #footer>
+                                                                <div
+                                                                    class="flex items-center gap-3 uppercase tracking-wide opacity-80"
+                                                                    :class="isOwnMessage(message) ? 'justify-end' : 'justify-start'"
+                                                                >
+                                                                    <span class="whitespace-nowrap">{{ formatMessageDate(message.created_at) }}</span>
+                                                                </div>
                                                             </template>
                                                         </Card>
                                                     </div>
