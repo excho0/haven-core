@@ -138,15 +138,31 @@ if (!empty($supplier_data)) {
     }
 }
 
-// Group products by tracking number for rendering
-$grouped_tracking = [];
+// Group products by tracking number for rendering, fulfilled before pending
+$fulfilled_groups = [];
+$pending_groups   = [];
+
 foreach ($products_tracking as $product) {
-    $tracking_number = $product['tracking_number'];
-    if (!isset($grouped_tracking[$tracking_number])) {
-        $grouped_tracking[$tracking_number] = [];
+    $tracking_number = isset($product['tracking_number']) ? trim((string) $product['tracking_number']) : '';
+    if ($tracking_number !== '') {
+        if (!isset($fulfilled_groups[$tracking_number])) {
+            $fulfilled_groups[$tracking_number] = [];
+        }
+        $fulfilled_groups[$tracking_number][] = $product;
+        continue;
     }
-    $grouped_tracking[$tracking_number][] = $product;
+
+    $pending_key = '__pending';
+    if (!isset($pending_groups[$pending_key])) {
+        $pending_groups[$pending_key] = [];
+    }
+    $pending_groups[$pending_key][] = $product;
 }
+
+$grouped_tracking = [
+    'fulfilled' => $fulfilled_groups,
+    'pending'   => $pending_groups,
+];
 ?>
 
 <!DOCTYPE html>
@@ -189,25 +205,16 @@ foreach ($products_tracking as $product) {
             </div>
 
 
-            <!-- Grouped Products -->
-            <?php foreach ($grouped_tracking as $tracking_number => $products_group): ?>
-                <?php $is_fulfilled = !empty($tracking_number); ?>
-                <div class="tracking-card">
-                    <!-- Tracking Header -->
-                    <div class="tracking-header">
+            <!-- Fulfilled Groups -->
+            <?php foreach ($grouped_tracking['fulfilled'] as $tracking_number => $products_group): ?>
+                <div class="tracking-card tracking-card--fulfilled">
+                    <div class="tracking-header tracking-header--fulfilled">
                         <span class="tracking-number">
-                            <?php if ($is_fulfilled): ?>
-                                Tracking Number: <?php echo esc_html($tracking_number); ?>
-                            <?php else: ?>
-                                Tracking Not Available
-                            <?php endif; ?>
+                            <?php echo esc_html__('Tracking Number:', HAVEN_CORE_TEXT_DOMAIN); ?> <?php echo esc_html($tracking_number); ?>
                         </span>
-                        <?php if ($is_fulfilled): ?>
-                            <a href="#" class="button-track">Track Package</a>
-                        <?php endif; ?>
+                        <span class="status-badge status-badge--fulfilled"><?php echo esc_html__('Fulfilled', HAVEN_CORE_TEXT_DOMAIN); ?></span>
                     </div>
 
-                    <!-- Product List -->
                     <div class="product-list">
                         <?php foreach ($products_group as $product): ?>
                             <div class="product-item">
@@ -220,7 +227,36 @@ foreach ($products_tracking as $product) {
                                         <?php echo esc_html($product['product_name']); ?>
                                     </a>
                                     <div class="product-quantity">
-                                        Quantity: <?php echo intval($product['quantity']); ?>
+                                        <?php echo esc_html__('Quantity:', HAVEN_CORE_TEXT_DOMAIN); ?> <?php echo intval($product['quantity']); ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+
+            <!-- Pending Groups -->
+            <?php foreach ($grouped_tracking['pending'] as $products_group): ?>
+                <div class="tracking-card tracking-card--pending">
+                    <div class="tracking-header tracking-header--pending">
+                        <span class="tracking-number"><?php echo esc_html__('Tracking Not Available', HAVEN_CORE_TEXT_DOMAIN); ?></span>
+                        <span class="status-badge status-badge--pending"><?php echo esc_html__('Pending', HAVEN_CORE_TEXT_DOMAIN); ?></span>
+                    </div>
+
+                    <div class="product-list">
+                        <?php foreach ($products_group as $product): ?>
+                            <div class="product-item">
+                                <?php if ($product['image_url'] !== 'No image available'): ?>
+                                    <img class="product-image" src="<?php echo esc_url($product['image_url']); ?>" alt="<?php echo esc_attr($product['product_name']); ?>">
+                                <?php endif; ?>
+
+                                <div class="product-info">
+                                    <a href="<?php echo esc_url($product['product_link']); ?>" class="product-name">
+                                        <?php echo esc_html($product['product_name']); ?>
+                                    </a>
+                                    <div class="product-quantity">
+                                        <?php echo esc_html__('Quantity:', HAVEN_CORE_TEXT_DOMAIN); ?> <?php echo intval($product['quantity']); ?>
                                     </div>
                                 </div>
                             </div>

@@ -84,6 +84,16 @@
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);  /* Soft shadow for depth */
     }
 
+    .tracking-card--fulfilled {
+        border: 1px solid #16a34a;
+        background-color: #ecfdf5;
+    }
+
+    .tracking-card--pending {
+        border: 1px solid #f59e0b;
+        background-color: #fffbeb;
+    }
+
     /* Header row with tracking number left, button right */
     .tracking-header {
         display: flex;
@@ -99,6 +109,33 @@
         font-size: 16px;
         font-weight: 600;
         color: #374151;                      /* Slate gray for readability */
+    }
+
+    .tracking-header--fulfilled .tracking-number {
+        color: #047857;
+    }
+
+    .tracking-header--pending .tracking-number {
+        color: #b45309;
+    }
+
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 9999px;
+    }
+
+    .status-badge--fulfilled {
+        background-color: #bbf7d0;
+        color: #065f46;
+    }
+
+    .status-badge--pending {
+        background-color: #fde68a;
+        color: #92400e;
     }
 
     /* Track button */

@@ -521,6 +521,7 @@
                         i18n: this.i18n,
                         currentUser: this.currentUser,
                         mobileIcon: this.mobileIcon,
+                        mobile: this.mobile,
                         isAdmin: false,
                         isRtl: this.isRtl,
                     };
@@ -2485,7 +2486,7 @@
             };
 
             const Products = {
-                inject: ['i18n'],
+                inject: ['i18n', 'mobile'],
                 data() {
                     return {
                         loading: false,
@@ -2749,6 +2750,17 @@
                     },
                     
                 },
+                computed: {
+                    first() {
+                        const currentPage = Number(this.page) || 1;
+                        const size = Number(this.perPage) || 10;
+                        return Math.max(0, (currentPage - 1) * size);
+                    },
+                    skeletonRows() {
+                        const size = Number(this.perPage) || 10;
+                        return Array.from({ length: size }, (_, index) => ({ id: `skeleton-${index}` }));
+                    }
+                },
                 mounted() {
                     this.fetchProducts();
                 },
@@ -2766,106 +2778,155 @@
                 },
                 template: `
                     <div class="overflow-y-auto h-full p-4 space-y-4">
-                        <DataTable
-                            :value="items"
-                            dataKey="id"
-                            v-model:selection="selected"
-                            :lazy="true"
-                            :paginator="true"
-                            :rows="perPage"
-                            :totalRecords="total"
-                            @page="onPage"
-                            :loading="loading"
-                            :filters="filters"
-                        >
-                            <template #header>
-                                <div class="flex flex-wrap gap-2 items-center justify-between">
-                                    <h4 class="m-0">{{ i18n.products }}</h4>
-                                    <IconField>
-                                        <InputIcon class="pi pi-search" />
-                                        <InputText v-model="filters.global.value" :placeholder="i18n.search_placeholder || i18n.search || 'Search'" @input="onSearchInput" />
-                                    </IconField>
-                                </div>
-                            </template>
+                        <div class="flex flex-wrap gap-2 items-center justify-between">
+                            <h4 class="m-0">{{ i18n.products }}</h4>
+                            <IconField>
+                                <InputIcon class="pi pi-search" />
+                                <InputText
+                                    v-model="filters.global.value"
+                                    :placeholder="i18n.search_placeholder || i18n.search || 'Search'"
+                                    @input="onSearchInput"
+                                />
+                            </IconField>
+                        </div>
 
-                            <Column selectionMode="multiple" style="width: 3rem" :exportable="false"></Column>
-                            <Column field="id" :header="i18n.id || '#'" style="min-width: 6rem"></Column>
-                            <Column field="name" :header="i18n.name || 'Name'" style="min-width: 16rem">
-                                <template #body="{ data }">
-                                    <div class="flex items-center gap-3 text-center justify-center">
-                                        <Image
-                                            v-if="data.thumbnail"
-                                            :src="data.thumbnail"
-                                            :alt="i18n.product_image_alt || 'product image'"
-                                            preview
-                                            class="flex-shrink-0 mx-auto sm:mx-0"
-                                            :pt="{
-                                                root: { class: 'rounded-lg overflow-hidden' },
-                                                image: { class: 'w-12 h-12 object-cover' }
-                                            }"
-                                        />
-                                        <div>
-                                            <div class="font-medium">{{ data.name }}</div>
+                        <Transition name="fade" mode="out-in">
+                            <div v-if="loading" key="skeleton" class="shadow-sm rounded-lg overflow-hidden">
+
+                                <div class="p-datatable" role="rowgroup">
+                                    <div
+                                        v-for="row in skeletonRows"
+                                        :key="row.id"
+                                        class="gap-4 px-4 py-3 items-center text-center"
+                                        :class="mobile ? 'flex flex-row' : 'grid grid-cols-12'"
+                                    >
+                                        <div v-if="!mobile" class="col-span-1">
+                                            <Skeleton shape="circle" size="1.75rem" />
+                                        </div>
+                                        <div v-if="!mobile" class="col-span-1">
+                                            <Skeleton width="3rem" class="mx-auto sm:mx-0" />
+                                        </div>
+                                        <div class="space-y-2 col-span-3">
+                                            <div class="flex items-center gap-3 flex-row justify-center">
+                                                <Skeleton shape="circle" size="3rem" class="flex-shrink-0" />
+                                                <div class="w-full space-y-2 flex flex-col">
+                                                    <Skeleton width="22rem" height="1rem" />
+                                                    <Skeleton width="12rem" height="0.75rem" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div v-if="!mobile" class="col-span-1">
+                                            <Skeleton width="8rem" height="1.25rem" />
+                                        </div>
+                                        <div v-if="!mobile" class="col-span-1">
+                                            <Skeleton width="5rem" height="1.1rem" />
+                                        </div>
+                                        <div v-if="!mobile" class="col-span-1">
+                                            <Skeleton width="4rem" height="1.1rem" />
+                                        </div>
+                                        <div v-if="!mobile" class="flex justify-center gap-2 sm:col-span-2">
+                                            <Skeleton width="12rem" height="1.4rem" class="mx-auto sm:mx-0" />
+                                        </div>
+                                        <div v-if="!mobile" class="flex justify-center sm:col-span-1">
+                                            <Skeleton width="6rem" height="2.4rem" />
                                         </div>
                                     </div>
-                                </template>
-                            </Column>
-                            <Column field="supplier_price" :header="i18n.supplier_price || 'Supplier Price'" style="min-width: 10rem; text-align: center">
-                                <template #body="{ data }">
-                                    <div class="w-full text-center">
-                                        {{ (data.supplier_price ?? '') !== '' 
-                                            ? data.supplier_price 
-                                            : (data.type === 'variable' ? (i18n.per_variation || 'Per variation') : (i18n.not_set || 'Not set')) }}
-                                    </div>
-                                </template>
-                            </Column>
-                            <Column field="sku" :header="i18n.sku || 'SKU'" style="min-width: 10rem">
-                                <template #body="{ data }">
-                                    <span>{{ (data.sku && data.sku.length) ? data.sku : '-' }}</span>
-                                </template>
-                            </Column>
-                            <Column :header="i18n.stock || 'Stock'" style="min-width: 10rem">
-                                <template #body="{ data }">
-                                    <div class="w-full text-center">
-                                        <template v-if="data.type === 'variable'">
-                                            <template v-if="data.manage_stock">
-                                                {{ data.stock_quantity ?? 0 }}
+                                </div>
+                            </div>
+                            <DataTable
+                                v-else
+                                key="table"
+                                :value="items"
+                                dataKey="id"
+                                v-model:selection="selected"
+                                selectionMode="single"
+                                scrollable
+                                scrollHeight="75svh"
+                                :paginator="true"
+                                :lazy="true"
+                                :first="first"
+                                :rows="perPage"
+                                :totalRecords="total"
+                                @page="onPage"
+                                :filters="filters"
+                            >
+                                <Column selectionMode="multiple" style="width: 3rem" :exportable="false"></Column>
+                                <Column field="id" :header="i18n.id || '#'" style="min-width: 6rem"></Column>
+                                <Column field="name" :header="i18n.name || 'Name'" style="min-width: 16rem">
+                                    <template #body="{ data }">
+                                        <div class="flex items-center gap-3 text-center justify-center">
+                                            <Image
+                                                v-if="data.thumbnail"
+                                                :src="data.thumbnail"
+                                                :alt="i18n.product_image_alt || 'product image'"
+                                                preview
+                                                class="flex-shrink-0 mx-auto sm:mx-0"
+                                                :pt="{
+                                                    root: { class: 'rounded-lg overflow-hidden' },
+                                                    image: { class: 'w-12 h-12 object-cover' }
+                                                }"
+                                            />
+                                            <div>
+                                                <div class="font-medium">{{ data.name }}</div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </Column>
+                                <Column field="supplier_price" :header="i18n.supplier_price || 'Supplier Price'" style="min-width: 10rem; text-align: center">
+                                    <template #body="{ data }">
+                                        <div class="w-full text-center">
+                                            {{ (data.supplier_price ?? '') !== '' 
+                                                ? data.supplier_price 
+                                                : (data.type === 'variable' ? (i18n.per_variation || 'Per variation') : (i18n.not_set || 'Not set')) }}
+                                        </div>
+                                    </template>
+                                </Column>
+                                <Column field="sku" :header="i18n.sku || 'SKU'" style="min-width: 10rem">
+                                    <template #body="{ data }">
+                                        <span>{{ (data.sku && data.sku.length) ? data.sku : '-' }}</span>
+                                    </template>
+                                </Column>
+                                <Column :header="i18n.stock || 'Stock'" style="min-width: 10rem">
+                                    <template #body="{ data }">
+                                        <div class="w-full text-center">
+                                            <template v-if="data.type === 'variable'">
+                                                <template v-if="data.manage_stock">
+                                                    {{ data.stock_quantity ?? 0 }}
+                                                </template>
+                                                <template v-else>
+                                                    <div>{{ (data.variation_stock_total ?? 0) }}</div>
+                                                </template>
                                             </template>
                                             <template v-else>
-                                                <div>
-                                                    <div>{{(data.variation_stock_total ?? 0) }}</div>
-                                                </div>
+                                                {{ (data.manage_stock && (data.stock_quantity ?? null) !== null) ? data.stock_quantity : '-' }}
                                             </template>
-                                        </template>
-                                        <template v-else>
-                                            {{ (data.manage_stock && (data.stock_quantity ?? null) !== null) ? data.stock_quantity : '-' }}
-                                        </template>
-                                    </div>
-                                </template>
-                            </Column>
-                            <Column :header="i18n.status || 'Status'" style="min-width: 12rem">
-                                <template #body="{ data }">
-                                    <div class="flex items-center gap-2">
-                                        <template v-if="data.type === 'variable' && !data.manage_stock">
-                                            <Tag :value="i18n.per_variation || 'Per variation'" severity="info" />
-                                            <span class="text-xs text-gray-500">{{ (data.variation_instock_count ?? 0) + '/' + (data.variation_total_count ?? 0) + ' ' + (i18n.in_stock || 'in stock') }}</span>
-                                        </template>
-                                        <template v-else>
-                                            <Tag :value="data.stock_status" :severity="statusSeverity(data.stock_status)" />
-                                            <span class="text-xs text-gray-500">{{ data.manage_stock ? (i18n.managed || 'Managed') : (i18n.unmanaged || 'Unmanaged') }}</span>
-                                        </template>
-                                    </div>
-                                </template>
-                            </Column>
-                            <Column :exportable="false" style="min-width: 12rem">
-                                <template #body="{ data }">
-                                    <div class="flex gap-2">
-                                        <Button v-if="data.type !== 'variable'" icon="pi pi-pencil" rounded variant="outlined" :aria-label="i18n.edit || 'Edit'" @click="openEdit(data)" />
-                                        <Button v-else icon="pi pi-sitemap" rounded variant="outlined" :aria-label="i18n.edit_variations || 'Edit Variations'" @click="openVariations(data)" />
-                                    </div>
-                                </template>
-                            </Column>
-                        </DataTable>
+                                        </div>
+                                    </template>
+                                </Column>
+                                <Column :header="i18n.status || 'Status'" style="min-width: 12rem">
+                                    <template #body="{ data }">
+                                        <div class="flex items-center gap-2">
+                                            <template v-if="data.type === 'variable' && !data.manage_stock">
+                                                <Tag :value="i18n.per_variation || 'Per variation'" severity="info" />
+                                                <span class="text-xs text-gray-500">{{ (data.variation_instock_count ?? 0) + '/' + (data.variation_total_count ?? 0) + ' ' + (i18n.in_stock || 'in stock') }}</span>
+                                            </template>
+                                            <template v-else>
+                                                <Tag :value="data.stock_status" :severity="statusSeverity(data.stock_status)" />
+                                                <span class="text-xs text-gray-500">{{ data.manage_stock ? (i18n.managed || 'Managed') : (i18n.unmanaged || 'Unmanaged') }}</span>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </Column>
+                                <Column :exportable="false" style="min-width: 12rem">
+                                    <template #body="{ data }">
+                                        <div class="flex gap-2">
+                                            <Button v-if="data.type !== 'variable'" icon="pi pi-pencil" rounded variant="outlined" :aria-label="i18n.edit || 'Edit'" @click="openEdit(data)" />
+                                            <Button v-else icon="pi pi-sitemap" rounded variant="outlined" :aria-label="i18n.edit_variations || 'Edit Variations'" @click="openVariations(data)" />
+                                        </div>
+                                    </template>
+                                </Column>
+                            </DataTable>
+                        </Transition>
 
                         <Dialog v-model:visible="editDialog.visible" modal :header="i18n.edit || 'Edit'" :style="{ width: '32rem' }">
                             <div v-if="editDialog.item" class="space-y-4">
@@ -2930,7 +2991,7 @@
                                 <Skeleton height="2rem" v-for="i in 4" :key="i" />
                             </div>
                             <div v-else>
-                                <DataTable :value="variationsDialog.items" dataKey="id">
+                                <DataTable :value="variationsDialog.items" dataKey="id" scrollable scrollHeight="45vh">
                                     <Column field="id" :header="i18n.id || 'ID'" style="min-width: 6rem" />
                                     <Column :header="i18n.name || 'Name'" style="min-width: 18rem">
                                         <template #body="{ data }">
