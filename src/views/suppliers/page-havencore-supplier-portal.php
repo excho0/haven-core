@@ -746,6 +746,9 @@
                         orders: [], // initially empty, will fetch from AJAX
                         ordersLoaded: false,
                         ordersPoller: null,
+                        ordersFetchPromise: null,
+                        layoutSyncHandle: null,
+                        panelPersistFrame: null,
                         carrierGroups: initialData.trackingCarriers || {},
                         carrierOtherCode: 'OTHER',
 
@@ -2135,115 +2138,145 @@
                         }
                     },
 
+                    scheduleOrdersLayoutSync() {
+                        if (this.layoutSyncHandle) {
+                            cancelAnimationFrame(this.layoutSyncHandle);
+                        }
+
+                        this.layoutSyncHandle = requestAnimationFrame(() => {
+                            const scroller = this.$refs.ordersScrollPanel;
+                            scroller?.handleResize?.();
+                            scroller?.$el?.dispatchEvent(new Event('scroll'));
+                            this.layoutSyncHandle = null;
+                        });
+                    },
+
+                    queuePanelStatePersist(key, expanded) {
+                        const persist = () => {
+                            if (expanded.length === 0) {
+                                localStorage.removeItem(key);
+                            } else {
+                                localStorage.setItem(key, JSON.stringify(expanded));
+                            }
+                            this.panelPersistFrame = null;
+                        };
+
+                        if (this.panelPersistFrame) {
+                            cancelAnimationFrame(this.panelPersistFrame);
+                        }
+
+                        this.panelPersistFrame = requestAnimationFrame(persist);
+                    },
+
                     // ========================================
                     // ✅ ORDER FULFILLMENT & METADATA
                     // ========================================
 
                     async fetchSupplierOrders(reset = false, page = null) {
-                        try {
-                            if (reset) {
-                                this.currentPage = 1;
-                                this.orders = [];
-                                this.allOrdersLoaded = false;
-                            }
+                        if (this.ordersFetchPromise) {
+                            return this.ordersFetchPromise;
+                        }
 
-                            const fetchPage = page !== null ? page : this.currentPage;
+                        const runner = async () => {
+                            try {
+                                if (reset) {
+                                    this.currentPage = 1;
+                                    this.orders = [];
+                                    this.allOrdersLoaded = false;
+                                }
 
-                            const result = await wp.apiFetch({
-                                path: `/hc/v1/suppliers/portal/assigned-orders?page=${fetchPage}&per_page=${this.perPage}&sort=${encodeURIComponent(this.sort)}&status=${this.selectedStatus?.value || 'all'}&search=${encodeURIComponent(this.searchQuery || '')}`,
-                                method: 'GET'
-                            });
+                                const fetchPage = page !== null ? page : this.currentPage;
 
-                            const newOrders = result.orders || [];
-
-                            newOrders.forEach(newOrder => {
-                                const trackingMeta = newOrder.tracking_groups_meta || {};
-                                const trackingGroups = (newOrder.grouped_products || []).map(group => {
-                                    const meta = trackingMeta[group.tracking_number] || {};
-                                    return {
-                                        id: 'group-' + group.tracking_number,
-                                        tracking_number: group.tracking_number,
-                                        carrier_code: group.carrier_code || meta.carrier_code || '',
-                                        carrier_name: group.carrier_name_other || meta.carrier_name_other || '',
-                                        products: group.products
-                                    };
+                                const result = await wp.apiFetch({
+                                    path: `/hc/v1/suppliers/portal/assigned-orders?page=${fetchPage}&per_page=${this.perPage}&sort=${encodeURIComponent(this.sort)}&status=${this.selectedStatus?.value || 'all'}&search=${encodeURIComponent(this.searchQuery || '')}`,
+                                    method: 'GET'
                                 });
 
-                                const finalOrder = {
-                                    ...newOrder,
-                                    trackingGroups,
-                                    ungroupedProducts: newOrder.ungrouped_products || []
-                                };
+                                const newOrders = result.orders || [];
 
-                                const existingIndex = this.orders.findIndex(order => order.id === finalOrder.id);
-                               if (existingIndex !== -1) {
-                                    const localSavedAt = this.lastSavedTimestamps?.[finalOrder.id] || 0;
-                                    const rawDate = finalOrder.date_modified;
-                                    const serverModifiedAt = rawDate ? new Date(rawDate).getTime() : 0;
+                                newOrders.forEach(newOrder => {
+                                    const trackingMeta = newOrder.tracking_groups_meta || {};
+                                    const trackingGroups = (newOrder.grouped_products || []).map(group => {
+                                        const meta = trackingMeta[group.tracking_number] || {};
+                                        return {
+                                            id: 'group-' + group.tracking_number,
+                                            tracking_number: group.tracking_number,
+                                            carrier_code: group.carrier_code || meta.carrier_code || '',
+                                            carrier_name: group.carrier_name_other || meta.carrier_name_other || '',
+                                            products: group.products
+                                        };
+                                    });
+
+                                    const finalOrder = {
+                                        ...newOrder,
+                                        trackingGroups,
+                                        ungroupedProducts: newOrder.ungrouped_products || []
+                                    };
+
+                                    const existingIndex = this.orders.findIndex(order => order.id === finalOrder.id);
+                                   if (existingIndex !== -1) {
+                                        const localSavedAt = this.lastSavedTimestamps?.[finalOrder.id] || 0;
+                                        const rawDate = finalOrder.date_modified;
+                                        const serverModifiedAt = rawDate ? new Date(rawDate).getTime() : 0;
 
 
-                                    // console.log({
-                                    //     id: finalOrder.id,
-                                    //     local: localSavedAt,
-                                    //     server: serverModifiedAt,
-                                    //     isNewer: serverModifiedAt >= localSavedAt
-                                    // });
-
-                                    if (serverModifiedAt >= localSavedAt) {
-                                        this.updateOrder({
-                                        ...this.orders[existingIndex],
-                                        ...finalOrder
-                                        });
+                                        if (serverModifiedAt >= localSavedAt) {
+                                            this.updateOrder({
+                                            ...this.orders[existingIndex],
+                                            ...finalOrder
+                                            });
+                                        } else {
+                                            console.debug(`⏳ Skipped update for order ${finalOrder.id} — local changes are newer`);
+                                        }
                                     } else {
-                                        console.debug(`⏳ Skipped update for order ${finalOrder.id} — local changes are newer`);
-                                    }
-                                } else {
-                                    this.orders.push(finalOrder);
-                                    this.panelCollapsedState[finalOrder.id] = true;
+                                        this.orders.push(finalOrder);
+                                        this.panelCollapsedState[finalOrder.id] = true;
 
-                                    // OS-level notification if tab is inactive
-                                    if (document.visibilityState === 'hidden') {
-                                        notifyOSWithVibrate({
-                                            title: this.i18n.new_order_notification_title,
-                                            body: this.i18n.new_order_notification_body.replace('%order_id%', finalOrder.id),
-                                            icon: this.mobileIcon
-                                        });
+                                        // OS-level notification if tab is inactive
+                                        if (document.visibilityState === 'hidden') {
+                                            notifyOSWithVibrate({
+                                                title: this.i18n.new_order_notification_title,
+                                                body: this.i18n.new_order_notification_body.replace('%order_id%', finalOrder.id),
+                                                icon: this.mobileIcon
+                                            });
+                                        }
                                     }
+                                });
+
+                                this.orders.sort((a, b) => {
+                                    const dateA = new Date(a.date_created);
+                                    const dateB = new Date(b.date_created);
+                                    return dateB - dateA;
+                                });
+
+                                const pagination = result.pagination || {};
+                                this.currentPage = pagination.page || fetchPage;
+                                this.totalPages = pagination.total_pages || 1;
+
+                                if (this.currentPage >= this.totalPages || newOrders.length === 0) {
+                                    this.allOrdersLoaded = true;
                                 }
-                            });
 
-                            // Sort orders by creation date (latest first)
-                            this.orders.sort((a, b) => {
-                                const dateA = new Date(a.date_created);
-                                const dateB = new Date(b.date_created);
-                                return dateB - dateA;
-                            });
+                                this.$nextTick(() => {
+                                    this.scheduleOrdersLayoutSync();
+                                });
 
-                            // Pagination
-                            const pagination = result.pagination || {};
-                            this.currentPage = pagination.page || fetchPage;
-                            this.totalPages = pagination.total_pages || 1;
-
-                            if (this.currentPage >= this.totalPages || newOrders.length === 0) {
-                                this.allOrdersLoaded = true;
+                            } catch (error) {
+                                this.$toast.error(this.i18n.error_loading_orders, {
+                                    description: error.message,
+                                    duration: 4000
+                                });
+                            } finally {
+                                this.ordersLoaded = true;
+                                this.isLoadingMore = false;
                             }
+                        };
 
-                            // Update VirtualScroller layout if needed
-                            this.$nextTick(() => {
-                                const vs = this.$refs.ordersScrollPanel;
-                                vs?.handleResize?.();
-                                vs?.$el?.dispatchEvent(new Event('scroll'));
-                            });
+                        this.ordersFetchPromise = runner().finally(() => {
+                            this.ordersFetchPromise = null;
+                        });
 
-                        } catch (error) {
-                            this.$toast.error(this.i18n.error_loading_orders, {
-                                description: error.message,
-                                duration: 4000
-                            });
-                        } finally {
-                            this.ordersLoaded = true;
-                            this.isLoadingMore = false;
-                        }
+                        return this.ordersFetchPromise;
                     },
                     // handleScroll: debounce(function (event) {
                     //     const scroller = event.target;
@@ -2434,7 +2467,14 @@
 
                     if (window.HavenCoreFetchClient?.create) {
                         this.ordersPoller = window.HavenCoreFetchClient.create({
-                            task: () => this.fetchSupplierOrders(false, 1),
+                            id: 'havencore-orders-poller',
+                            task: () => {
+                                if (!this.ordersFetchPromise) {
+                                    return this.fetchSupplierOrders(false, 1);
+                                }
+
+                                return this.ordersFetchPromise;
+                            },
                             interval: 30000,
                             runOnFocus: true
                         });
@@ -2465,6 +2505,14 @@
                     if (this.ordersPoller?.stop) {
                         this.ordersPoller.stop();
                     }
+                    if (this.layoutSyncHandle) {
+                        cancelAnimationFrame(this.layoutSyncHandle);
+                        this.layoutSyncHandle = null;
+                    }
+                    if (this.panelPersistFrame) {
+                        cancelAnimationFrame(this.panelPersistFrame);
+                        this.panelPersistFrame = null;
+                    }
                 },
                 watch: {
                     panelCollapsedState: {
@@ -2475,11 +2523,7 @@
 
                             const key = 'hc_supplier_portal_expanded_orders';
 
-                            if (expanded.length === 0) {
-                                localStorage.removeItem(key);
-                            } else {
-                                localStorage.setItem(key, JSON.stringify(expanded));
-                            }
+                            this.queuePanelStatePersist(key, expanded);
                         },
                         deep: true
                     }
