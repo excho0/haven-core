@@ -614,6 +614,7 @@
                             return;
                         }
                         this.unreadPoller = window.HavenCoreFetchClient.create({
+                            id: 'havencore-unread-poller',
                             task: () => this.fetchUnreadSummary({ silent: true }),
                             interval: 20000,
                             runOnFocus: true
@@ -3385,6 +3386,7 @@
                             }
                         };
                         this.autoRefreshPoller = window.HavenCoreFetchClient.create({
+                            id: 'supplier-portal-auto-refresh',
                             task: runner,
                             interval: 15000,
                             runOnFocus: true

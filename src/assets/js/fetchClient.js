@@ -7,6 +7,7 @@
         debug: !!(global.HavenCoreFetchClientConfig && global.HavenCoreFetchClientConfig.debug)
     };
     const instances = new Set();
+    const instanceRegistry = new Map();
 
     function FetchClient(config) {
         const opts = config || {};
@@ -22,8 +23,12 @@
         this.active = false;
         this.visibilityHandler = this.onVisibilityChange.bind(this);
         this.focusHandler = this.onFocus.bind(this);
+        this.id = typeof opts.id === 'string' && opts.id.trim() ? opts.id.trim() : null;
 
         instances.add(this);
+        if (this.id) {
+            instanceRegistry.set(this.id, this);
+        }
     }
 
     FetchClient.prototype.log = function (...args) {
@@ -107,6 +112,9 @@
     FetchClient.prototype.stop = function () {
         if (!this.active) {
             instances.delete(this);
+            if (this.id && instanceRegistry.get(this.id) === this) {
+                instanceRegistry.delete(this.id);
+            }
             return;
         }
         this.active = false;
@@ -115,6 +123,9 @@
         window.removeEventListener('blur', this.visibilityHandler);
         window.removeEventListener('focus', this.focusHandler);
         instances.delete(this);
+        if (this.id && instanceRegistry.get(this.id) === this) {
+            instanceRegistry.delete(this.id);
+        }
         this.log('poller stopped');
     };
 
@@ -124,7 +135,30 @@
 
     global.HavenCoreFetchClient = {
         create(options) {
-            return new FetchClient(options);
+            const opts = options || {};
+            if (opts && typeof opts.id === 'string') {
+                const key = opts.id.trim();
+                if (key) {
+                    const existing = instanceRegistry.get(key);
+                    if (existing) {
+                        existing.stop();
+                    }
+                }
+            }
+            return new FetchClient(opts);
+        },
+        stopById(id) {
+            if (typeof id !== 'string') {
+                return;
+            }
+            const key = id.trim();
+            if (!key) {
+                return;
+            }
+            const existing = instanceRegistry.get(key);
+            if (existing) {
+                existing.stop();
+            }
         },
         setDebug(value) {
             globalConfig.debug = !!value;
