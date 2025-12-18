@@ -3441,7 +3441,6 @@
                         this.selectedConversationId = conversation.id;
                         this.pendingConversationId = conversation.id;
                         this.updateConversationRoute(conversation.id);
-                        this.fetchMessages(conversation.id, { scrollToLatest: true });
                     },
                     deselectConversation() {
                         this.selectedConversationId = null;
