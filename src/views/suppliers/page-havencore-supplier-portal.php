@@ -3386,7 +3386,7 @@
                             }
                         };
                         this.autoRefreshPoller = window.HavenCoreFetchClient.create({
-                            id: 'supplier-portal-auto-refresh',
+                            id: 'supplier-portal-auto-refresh-conversations-messages',
                             task: runner,
                             interval: 15000,
                             runOnFocus: true

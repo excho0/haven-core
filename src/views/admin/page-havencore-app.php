@@ -270,6 +270,7 @@
                 pollTask();
 
                 this.unreadPoller = window.HavenCoreFetchClient.create({
+                    id: 'havencore-unread-poller',
                     task: pollTask,
                     interval: 20000,
                     runOnFocus: true
@@ -488,6 +489,7 @@
                 };
 
                 this.autoRefreshPoller = window.HavenCoreFetchClient.create({
+                    id: 'havencore-auto-refresh-conversations-messages',
                     task: runner,
                     interval: 15000,
                     runOnFocus: true
