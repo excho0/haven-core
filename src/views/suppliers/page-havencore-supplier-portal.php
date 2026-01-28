@@ -349,6 +349,11 @@
             const initialData = JSON.parse(document.getElementById('app-initial-data')?.textContent || '{}');
             const portalLoginUrl = initialData.loginUrl || <?= json_encode(wp_login_url($_SERVER['REQUEST_URI'])); ?>;
 
+            let authRedirectGraceUntil = 0;
+            const extendAuthRedirectGrace = (duration = 1000 * 10) => {
+                authRedirectGraceUntil = Date.now() + duration;
+            };
+
             const redirectToLogin = () => {
                 const targetRoute = window.location.hash ? window.location.hash.replace(/^#/, '') : '/orders';
                 const targetUrl = new URL(window.location.href);
@@ -364,6 +369,10 @@
             };
 
             const shouldRedirectForAuthError = (error) => {
+                if (authRedirectGraceUntil && Date.now() < authRedirectGraceUntil) {
+                    return false;
+                }
+
                 const code = (error?.code || error?.data?.code || '').toString();
                 const status = error?.status || error?.data?.status;
                 const message = (error?.message || error?.data?.message || '').toLowerCase();
@@ -3249,6 +3258,8 @@
                             if (response.updated_attributes) {
                                 Object.assign(this.currentUser.attributes, response.updated_attributes);
                             }
+
+                            extendAuthRedirectGrace(15000);
 
                             this.$nextTick(() => {
                                 this.$router.push('/');
