@@ -50,7 +50,6 @@ class Customer {
             add_filter('woocommerce_registration_errors', [self::class, 'handle_email_verification_flow'], 0, 3);
             add_filter('woocommerce_process_registration_errors', [self::class, 'handle_email_verification_flow'], 0, 4);
             add_filter('woocommerce_registration_auth_new_customer', '__return_false');
-            add_action('wp_enqueue_scripts', [self::class, 'enqueue_rey_ajax_redirect_handler']);
 
             // Disable WooCommerce's native "new account" emails so only our flow runs.
             add_filter('woocommerce_email_enabled_customer_new_account', '__return_false');
@@ -316,6 +315,8 @@ class Customer {
      */
     private static function respond_to_rey_ajax(string $redirect_url): void
     {
+        $home_link = esc_url(home_url('/'));
+
         $message = sprintf(
             '<div class="rey-accountForms-notice havencore-register-card">
                 <div class="havencore-register-card__body">
@@ -323,12 +324,13 @@ class Customer {
                     <p>%s</p>
                 </div>
                 <div class="havencore-register-card__actions">
-                    <button type="button" class="btn btn-line havencore-close-account-panel">%s</button>
+                    <a class="btn btn-line" href="%s">%s</a>
                 </div>
             </div>',
             esc_html__('Please confirm your email', HAVEN_CORE_TEXT_DOMAIN),
             esc_html__('We just sent a verification link to your inbox. Click it to activate your account and finish signing in.', HAVEN_CORE_TEXT_DOMAIN),
-            esc_html__('Close', HAVEN_CORE_TEXT_DOMAIN)
+            $home_link,
+            esc_html__('Back to home', HAVEN_CORE_TEXT_DOMAIN)
         );
 
         $payload = [
@@ -349,79 +351,6 @@ class Customer {
         ]);
     }
 
-    /**
-     * Injects a small script so Rey's AJAX handler honors our redirect URL.
-     */
-    public static function enqueue_rey_ajax_redirect_handler(): void
-    {
-        $script_handle = 'havencore-rey-register-helper';
-        wp_register_script($script_handle, '', [], HAVEN_CORE_VERSION, true);
-        wp_enqueue_script($script_handle);
-
-        $style_handle = 'havencore-rey-register-style';
-        wp_register_style($style_handle, false, [], HAVEN_CORE_VERSION);
-        wp_enqueue_style($style_handle);
-
-        $script = <<<JS
-(function(){
-    function closeAccountPanel(){
-        try {
-            if (window.rey && window.rey.frontend) {
-                if (window.rey.frontend.panels && typeof window.rey.frontend.panels.closeActive === 'function') {
-                    window.rey.frontend.panels.closeActive();
-                }
-                if (window.rey.frontend.overlay && typeof window.rey.frontend.overlay.close === 'function') {
-                    window.rey.frontend.overlay.close();
-                }
-            }
-        } catch (error) {
-            console.error('HavenCore account panel close failed', error);
-        }
-        document.body.classList.remove('header-account--active');
-    }
-
-    document.addEventListener('click', function(event){
-        var button = event.target.closest('.havencore-close-account-panel');
-        if (!button) {
-            return;
-        }
-        event.preventDefault();
-        closeAccountPanel();
-    });
-})();
-JS;
-
-        $styles = <<<CSS
-.havencore-register-card {
-    border: 1px solid rgba(255,255,255,.2);
-    border-radius: 12px;
-    padding: 24px;
-    background: rgba(255,255,255,.03);
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-.havencore-register-card__body h3 {
-    margin: 0 0 8px;
-    font-size: 1.25rem;
-}
-.havencore-register-card__body p {
-    margin: 0;
-    line-height: 1.5;
-    font-size: .95rem;
-}
-.havencore-register-card__actions {
-    display: flex;
-    justify-content: flex-end;
-}
-.havencore-close-account-panel {
-    cursor: pointer;
-}
-CSS;
-
-        wp_add_inline_script($script_handle, $script);
-        wp_add_inline_style($style_handle, $styles);
-    }
 
     /**
      * Renders and sends the verification email.
