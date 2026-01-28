@@ -107,6 +107,10 @@ class Customer {
 
         $frontend_ajax = self::is_frontend_ajax_registration();
 
+        if (empty($username) && !empty($email)) {
+            $username = self::derive_username_from_email($email);
+        }
+
         if (is_admin() && !$frontend_ajax) {
             return $errors;
         }
@@ -308,6 +312,34 @@ class Customer {
             ?? '';
 
         return $action_type === 'register';
+    }
+
+    /**
+     * Create a deterministic username based on the submitted email.
+     */
+    private static function derive_username_from_email(string $email): string
+    {
+        $local_part = strstr($email, '@', true);
+        $base = sanitize_user($local_part ?? '', true);
+
+        if (empty($base)) {
+            $base = 'user';
+        }
+
+        $candidate = $base;
+        $suffix = 1;
+
+        while (username_exists($candidate)) {
+            $candidate = sprintf('%s_%d', $base, $suffix);
+            $suffix++;
+
+            if ($suffix > 50) {
+                $candidate = $base . '_' . wp_generate_password(4, false, false);
+                break;
+            }
+        }
+
+        return $candidate;
     }
 
     /**
