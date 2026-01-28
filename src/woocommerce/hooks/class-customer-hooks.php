@@ -356,7 +356,7 @@ class Customer {
                     <p>%s</p>
                 </div>
                 <div class="havencore-register-card__actions">
-                    <a class="btn btn-line" href="%s">%s</a>
+                    <a class="btn btn-line havencore-register-card__button" href="%s">%s</a>
                 </div>
             </div>',
             esc_html__('Please confirm your email', HAVEN_CORE_TEXT_DOMAIN),

@@ -243,6 +243,9 @@
     display: flex;
     justify-content: flex-end;
 }
+.havencore-register-card__button {
+    cursor: pointer;
+}
 .havencore-close-account-panel {
     cursor: pointer;
 }
