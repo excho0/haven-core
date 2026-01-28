@@ -293,7 +293,15 @@ class Customer {
             return false;
         }
 
-        $action_type = $_REQUEST['action_type'] ?? $_POST['action_type'] ?? '';
+        $rey_payload = $_REQUEST['reycore-ajax-data'] ?? $_POST['reycore-ajax-data'] ?? [];
+        if (!is_array($rey_payload)) {
+            $rey_payload = [];
+        }
+
+        $action_type = $rey_payload['action_type']
+            ?? $_REQUEST['action_type']
+            ?? $_POST['action_type']
+            ?? '';
 
         return $action_type === 'register';
     }
