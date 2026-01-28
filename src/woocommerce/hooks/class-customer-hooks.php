@@ -321,10 +321,21 @@ class Customer {
             esc_html__('Please check your inbox to activate your account.', HAVEN_CORE_TEXT_DOMAIN)
         );
 
-        wp_send_json_success([
+        $payload = [
             'html'     => $message,
             'notices'  => '',
             'redirect' => $redirect_url,
+        ];
+
+        wp_send_json_success([
+            'account_forms' => [
+                'success'   => true,
+                'code'      => 200,
+                'data'      => $payload,
+                'assets'    => false,
+                'transient' => false,
+                'after_data'=> false,
+            ],
         ]);
     }
 
