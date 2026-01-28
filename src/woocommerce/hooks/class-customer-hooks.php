@@ -317,8 +317,17 @@ class Customer {
     private static function respond_to_rey_ajax(string $redirect_url): void
     {
         $message = sprintf(
-            '<div class="rey-accountForms-notice"><div class="woocommerce-message" role="alert">%s</div><button type="button" class="btn btn-line havencore-close-account-panel">%s</button></div>',
-            esc_html__('Please check your inbox to activate your account.', HAVEN_CORE_TEXT_DOMAIN),
+            '<div class="rey-accountForms-notice havencore-register-card">
+                <div class="havencore-register-card__body">
+                    <h3>%s</h3>
+                    <p>%s</p>
+                </div>
+                <div class="havencore-register-card__actions">
+                    <button type="button" class="btn btn-line havencore-close-account-panel">%s</button>
+                </div>
+            </div>',
+            esc_html__('Please confirm your email', HAVEN_CORE_TEXT_DOMAIN),
+            esc_html__('We just sent a verification link to your inbox. Click it to activate your account and finish signing in.', HAVEN_CORE_TEXT_DOMAIN),
             esc_html__('Close', HAVEN_CORE_TEXT_DOMAIN)
         );
 
@@ -345,37 +354,73 @@ class Customer {
      */
     public static function enqueue_rey_ajax_redirect_handler(): void
     {
-        $handle = 'havencore-rey-register-helper';
-        wp_register_script($handle, '', [], HAVEN_CORE_VERSION, true);
-        wp_enqueue_script($handle);
+        $script_handle = 'havencore-rey-register-helper';
+        wp_register_script($script_handle, '', [], HAVEN_CORE_VERSION, true);
+        wp_enqueue_script($script_handle);
+
+        $style_handle = 'havencore-rey-register-style';
+        wp_register_style($style_handle, false, [], HAVEN_CORE_VERSION);
+        wp_enqueue_style($style_handle);
 
         $script = <<<JS
-(function waitForReyHooks(){
-    if (window.rey && window.rey.hooks && typeof window.rey.hooks.addAction === 'function') {
-        window.rey.hooks.addAction('reycore/woocommerce/after_register', function(){
-            setTimeout(function attachCloseButtons(){
-                var buttons = document.querySelectorAll('.havencore-close-account-panel');
-                if (!buttons.length) return;
-                buttons.forEach(function(btn){
-                    if (btn.dataset.havencoreBound) return;
-                    btn.dataset.havencoreBound = '1';
-                    btn.addEventListener('click', function(event){
-                        event.preventDefault();
-                        if (window.rey && window.rey.frontend && window.rey.frontend.panels) {
-                            window.rey.frontend.panels.closeActive();
-                            window.rey.frontend.overlay.close();
-                        }
-                    });
-                });
-            }, 0);
-        });
-        return;
+(function(){
+    function closeAccountPanel(){
+        try {
+            if (window.rey && window.rey.frontend) {
+                if (window.rey.frontend.panels && typeof window.rey.frontend.panels.closeActive === 'function') {
+                    window.rey.frontend.panels.closeActive();
+                }
+                if (window.rey.frontend.overlay && typeof window.rey.frontend.overlay.close === 'function') {
+                    window.rey.frontend.overlay.close();
+                }
+            }
+        } catch (error) {
+            console.error('HavenCore account panel close failed', error);
+        }
+        document.body.classList.remove('header-account--active');
     }
-    setTimeout(waitForReyHooks, 200);
+
+    document.addEventListener('click', function(event){
+        var button = event.target.closest('.havencore-close-account-panel');
+        if (!button) {
+            return;
+        }
+        event.preventDefault();
+        closeAccountPanel();
+    });
 })();
 JS;
 
-        wp_add_inline_script($handle, $script);
+        $styles = <<<CSS
+.havencore-register-card {
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 12px;
+    padding: 24px;
+    background: rgba(255,255,255,.03);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.havencore-register-card__body h3 {
+    margin: 0 0 8px;
+    font-size: 1.25rem;
+}
+.havencore-register-card__body p {
+    margin: 0;
+    line-height: 1.5;
+    font-size: .95rem;
+}
+.havencore-register-card__actions {
+    display: flex;
+    justify-content: flex-end;
+}
+.havencore-close-account-panel {
+    cursor: pointer;
+}
+CSS;
+
+        wp_add_inline_script($script_handle, $script);
+        wp_add_inline_style($style_handle, $styles);
     }
 
     /**
