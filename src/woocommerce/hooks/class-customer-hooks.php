@@ -337,21 +337,25 @@ class Customer {
             return;
         }
 
-        wp_enqueue_script('jquery');
+        $handle = 'havencore-rey-register-redirect';
+        wp_register_script($handle, '', [], HAVEN_CORE_VERSION, true);
+        wp_enqueue_script($handle);
 
         $script = <<<JS
-(function($){
-    if (!$ || !$.fn || !$.fn.on) return;
-    $(document).on('reycore/woocommerce/after_register', function(event, response){
-        var redirect = response && response.data && response.data.redirect;
-        if (redirect) {
-            window.location.href = redirect;
-        }
-    });
-})(window.jQuery);
+(function waitForReyHooks(){
+    if (window.rey && window.rey.hooks && typeof window.rey.hooks.addAction === 'function') {
+        window.rey.hooks.addAction('reycore/woocommerce/after_register', function(response){
+            if (response && response.data && response.data.redirect) {
+                window.location.href = response.data.redirect;
+            }
+        });
+        return;
+    }
+    setTimeout(waitForReyHooks, 200);
+})();
 JS;
 
-        wp_add_inline_script('jquery', $script);
+        wp_add_inline_script($handle, $script);
     }
 
     /**
