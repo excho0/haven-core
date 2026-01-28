@@ -50,6 +50,7 @@ class Customer {
             add_filter('woocommerce_registration_errors', [self::class, 'handle_email_verification_flow'], 0, 3);
             add_filter('woocommerce_process_registration_errors', [self::class, 'handle_email_verification_flow'], 0, 4);
             add_filter('woocommerce_registration_auth_new_customer', '__return_false');
+            add_action('wp_enqueue_scripts', [self::class, 'enqueue_rey_ajax_redirect_handler']);
 
             // Disable WooCommerce's native "new account" emails so only our flow runs.
             add_filter('woocommerce_email_enabled_customer_new_account', '__return_false');
@@ -176,6 +177,10 @@ class Customer {
             'haven_core_email_verification_redirect_url',
             home_url('/?conf_reg_email_sent=1')
         );
+
+        if (self::is_rey_ajax_register()) {
+            self::respond_to_rey_ajax($redirect_url);
+        }
 
         wp_safe_redirect($redirect_url);
         exit;
@@ -304,6 +309,49 @@ class Customer {
             ?? '';
 
         return $action_type === 'register';
+    }
+
+    /**
+     * Send a JSON success payload tailored for Rey's AJAX handler.
+     */
+    private static function respond_to_rey_ajax(string $redirect_url): void
+    {
+        $message = sprintf(
+            '<div class="rey-accountForms-notice --vanish"><div class="woocommerce-message" role="alert">%s</div></div>',
+            esc_html__('Please check your inbox to activate your account.', HAVEN_CORE_TEXT_DOMAIN)
+        );
+
+        wp_send_json_success([
+            'html'     => $message,
+            'notices'  => '',
+            'redirect' => $redirect_url,
+        ]);
+    }
+
+    /**
+     * Injects a small script so Rey's AJAX handler honors our redirect URL.
+     */
+    public static function enqueue_rey_ajax_redirect_handler(): void
+    {
+        if (!function_exists('reycore_wc__get_account_panel_args')) {
+            return;
+        }
+
+        wp_enqueue_script('jquery');
+
+        $script = <<<JS
+(function($){
+    if (!$ || !$.fn || !$.fn.on) return;
+    $(document).on('reycore/woocommerce/after_register', function(event, response){
+        var redirect = response && response.data && response.data.redirect;
+        if (redirect) {
+            window.location.href = redirect;
+        }
+    });
+})(window.jQuery);
+JS;
+
+        wp_add_inline_script('jquery', $script);
     }
 
     /**
