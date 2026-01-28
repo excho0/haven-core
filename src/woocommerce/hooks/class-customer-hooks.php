@@ -317,14 +317,15 @@ class Customer {
     private static function respond_to_rey_ajax(string $redirect_url): void
     {
         $message = sprintf(
-            '<div class="rey-accountForms-notice --vanish"><div class="woocommerce-message" role="alert">%s</div></div>',
-            esc_html__('Please check your inbox to activate your account.', HAVEN_CORE_TEXT_DOMAIN)
+            '<div class="rey-accountForms-notice"><div class="woocommerce-message" role="alert">%s</div><button type="button" class="btn btn-line havencore-close-account-panel">%s</button></div>',
+            esc_html__('Please check your inbox to activate your account.', HAVEN_CORE_TEXT_DOMAIN),
+            esc_html__('Close', HAVEN_CORE_TEXT_DOMAIN)
         );
 
         $payload = [
             'html'     => $message,
             'notices'  => '',
-            'redirect' => $redirect_url,
+            'redirect' => '',
         ];
 
         wp_send_json_success([
@@ -344,21 +345,29 @@ class Customer {
      */
     public static function enqueue_rey_ajax_redirect_handler(): void
     {
-        if (!function_exists('reycore_wc__get_account_panel_args')) {
-            return;
-        }
-
-        $handle = 'havencore-rey-register-redirect';
+        $handle = 'havencore-rey-register-helper';
         wp_register_script($handle, '', [], HAVEN_CORE_VERSION, true);
         wp_enqueue_script($handle);
 
         $script = <<<JS
 (function waitForReyHooks(){
     if (window.rey && window.rey.hooks && typeof window.rey.hooks.addAction === 'function') {
-        window.rey.hooks.addAction('reycore/woocommerce/after_register', function(response){
-            if (response && response.data && response.data.redirect) {
-                window.location.href = response.data.redirect;
-            }
+        window.rey.hooks.addAction('reycore/woocommerce/after_register', function(){
+            setTimeout(function attachCloseButtons(){
+                var buttons = document.querySelectorAll('.havencore-close-account-panel');
+                if (!buttons.length) return;
+                buttons.forEach(function(btn){
+                    if (btn.dataset.havencoreBound) return;
+                    btn.dataset.havencoreBound = '1';
+                    btn.addEventListener('click', function(event){
+                        event.preventDefault();
+                        if (window.rey && window.rey.frontend && window.rey.frontend.panels) {
+                            window.rey.frontend.panels.closeActive();
+                            window.rey.frontend.overlay.close();
+                        }
+                    });
+                });
+            }, 0);
         });
         return;
     }
