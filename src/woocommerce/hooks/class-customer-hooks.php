@@ -252,6 +252,10 @@ class Customer {
             return true;
         }
 
+        if (self::is_rey_ajax_register()) {
+            return true;
+        }
+
         return false;
     }
 
@@ -272,7 +276,26 @@ class Customer {
             return true;
         }
 
+        if (self::is_rey_ajax_register()) {
+            return true;
+        }
+
         return false;
+    }
+
+    private static function is_rey_ajax_register(): bool
+    {
+        if (empty($_REQUEST['reycore-ajax'])) {
+            return false;
+        }
+
+        if ($_REQUEST['reycore-ajax'] !== 'account_forms') {
+            return false;
+        }
+
+        $action_type = $_REQUEST['action_type'] ?? $_POST['action_type'] ?? '';
+
+        return $action_type === 'register';
     }
 
     /**
