@@ -48,6 +48,7 @@ class Customer {
 
         if (WCSettings::accountSecurityFlowEnabled() && $verificationEmailsEnabled) {
             add_filter('woocommerce_registration_errors', [self::class, 'handle_email_verification_flow'], 0, 3);
+            add_filter('woocommerce_process_registration_errors', [self::class, 'handle_email_verification_flow'], 0, 4);
             add_filter('woocommerce_registration_auth_new_customer', '__return_false');
 
             // Disable WooCommerce's native "new account" emails so only our flow runs.
@@ -96,13 +97,29 @@ class Customer {
      * @param string    $email
      * @return \WP_Error
      */
-    public static function handle_email_verification_flow($errors, $username, $email)
+    public static function handle_email_verification_flow($errors, $username, $password_or_email = null, $maybe_email = null)
     {
-        if (is_admin() || (defined('REST_REQUEST') && REST_REQUEST) || wp_doing_ajax()) {
+        $email = $maybe_email;
+
+        if (is_null($email) && is_email($password_or_email ?? '')) {
+            $email = $password_or_email;
+        }
+
+        $frontend_ajax = self::is_frontend_ajax_registration();
+
+        if (is_admin() && !$frontend_ajax) {
             return $errors;
         }
 
-        if (empty($_POST) || !isset($_POST['register'])) {
+        if ((defined('REST_REQUEST') && REST_REQUEST)) {
+            return $errors;
+        }
+
+        if (wp_doing_ajax() && !$frontend_ajax) {
+            return $errors;
+        }
+
+        if (!self::is_frontend_registration_context()) {
             return $errors;
         }
 
@@ -205,6 +222,57 @@ class Customer {
         }
 
         return $meta;
+    }
+
+    /**
+     * Determine whether the current request is attempting to create a customer account on the frontend.
+     *
+     * WooCommerce exposes multiple registration entry points (classic My Account form, the new blocks/AJAX
+     * endpoint, checkout "create account" toggle, or WordPress' own `/wp-login.php?action=register`).
+     * Several of these flows omit the legacy `register` submit field, so we need broader detection logic
+     * before short-circuiting the email verification gate.
+     */
+    private static function is_frontend_registration_context(): bool
+    {
+        if (!empty($_POST)) {
+            if (isset($_POST['register']) || isset($_POST['woocommerce-register-nonce'])) {
+                return true;
+            }
+
+            if (isset($_POST['action']) && $_POST['action'] === 'register') {
+                return true;
+            }
+
+            if (isset($_POST['createaccount']) && isset($_POST['woocommerce-process-checkout-nonce'])) {
+                return true;
+            }
+        }
+
+        if (isset($_REQUEST['wc-ajax']) && $_REQUEST['wc-ajax'] === 'register') {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Detect WooCommerce front-end AJAX registrations (used by some themes/blocks) so we don't short-circuit.
+     */
+    private static function is_frontend_ajax_registration(): bool
+    {
+        if (!wp_doing_ajax()) {
+            return false;
+        }
+
+        if (!empty($_REQUEST['wc-ajax']) && $_REQUEST['wc-ajax'] === 'register') {
+            return true;
+        }
+
+        if (!empty($_REQUEST['action']) && $_REQUEST['action'] === 'woocommerce_register') {
+            return true;
+        }
+
+        return false;
     }
 
     /**
