@@ -1305,6 +1305,16 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			$supplier_total_formatted = html_entity_decode( wp_strip_all_tags( $supplier_total_formatted ), ENT_QUOTES, get_bloginfo( 'charset' ) );
 			$supplier_total_formatted = str_replace( "\xc2\xa0", ' ', $supplier_total_formatted );
 
+			$shipping_phone = '';
+			if (method_exists($order, 'get_shipping_phone')) {
+				$shipping_phone = $order->get_shipping_phone();
+			}
+			if (!$shipping_phone) {
+				$shipping_phone = $order->get_meta('_shipping_phone', true);
+			}
+
+			$shipping_email = $order->get_meta('_shipping_email', true);
+
 			$orders_data[] = [
 				'id' => $order_id,
 				'date_created' => $order->get_date_created() ? $order->get_date_created()->date( 'Y-m-d H:i' ) : '',
@@ -1340,6 +1350,8 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 					'shipping_postcode' => $order->get_shipping_postcode(),
 					'shipping_state' => $order->get_shipping_state(),
 					'shipping_country' => $order->get_shipping_country(),
+					'shipping_phone' => $shipping_phone,
+					'shipping_email' => $shipping_email,
 				]
 			];
 		}

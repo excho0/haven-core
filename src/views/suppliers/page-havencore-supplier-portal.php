@@ -246,6 +246,9 @@
                     'name'                          => __('Name', HAVEN_CORE_TEXT_DOMAIN),
                     'phone'                         => __('Phone', HAVEN_CORE_TEXT_DOMAIN),
                     'shipping_address'              => __('Shipping Address', HAVEN_CORE_TEXT_DOMAIN),
+                    'billing_address'               => __('Billing Address', HAVEN_CORE_TEXT_DOMAIN),
+                    'shipping_address_fallback_badge' => __('Billing Address Used', HAVEN_CORE_TEXT_DOMAIN),
+                    'shipping_address_fallback_note'  => __('Customer did not supply a shipping address, so we are showing the billing details instead.', HAVEN_CORE_TEXT_DOMAIN),
 
                     // ─── Fulfillment / Tracking ──────────────────
                     'add_tracking_number'           => __('Add Tracking Number', HAVEN_CORE_TEXT_DOMAIN),
@@ -1085,7 +1088,7 @@
                                                             <div class="flex items-center gap-2">
                                                                 <i class="pi pi-id-card "></i>
                                                                 <span class="font-medium">{{ i18n.name }}:</span>
-                                                                <span>{{ order.customer.first_name }} {{ order.customer.last_name }}</span>
+                                                                <span>{{ resolveCustomerName(order) || i18n.n_a }}</span>
                                                             </div>
 
                                                             <div v-if="order.customer.shipping_company" class="flex items-center gap-2">
@@ -1097,26 +1100,36 @@
                                                             <div class="flex items-center gap-2">
                                                                 <i class="pi pi-envelope "></i>
                                                                 <span class="font-medium">{{ i18n.email }}:</span>
-                                                                <span>{{ order.customer.email || i18n.n_a }}</span>
-                                                            </div>
-
-                                                            <div v-if="order.customer.phone" class="flex items-center gap-2">
-                                                                <i class="pi pi-phone "></i>
-                                                                <span class="font-medium">{{ i18n.phone }}:</span>
-                                                                <span>{{ order.customer.phone || i18n.n_a }}</span>
+                                                                <span>{{ resolveCustomerEmail(order) || i18n.n_a }}</span>
                                                             </div>
 
                                                             <div class="flex items-center gap-2">
-                                                                <i class="pi pi-truck "></i>
+                                                                <i class="pi pi-phone "></i>
+                                                                <span class="font-medium">{{ i18n.phone }}:</span>
+                                                                <span>{{ resolveCustomerPhone(order) || i18n.n_a }}</span>
+                                                            </div>
 
-                                                                <span class="font-medium">{{ i18n.shipping_address }}:</span>
+                                                            <div class="flex flex-col gap-1">
+                                                                <div class="flex items-start gap-2 flex-wrap">
+                                                                    <i class="pi pi-truck "></i>
+                                                                    <span class="font-medium">{{ resolveCustomerAddress(order).label }}:</span>
+                                                                    <Badge
+                                                                        v-if="resolveCustomerAddress(order).isFallback"
+                                                                        :value="i18n.shipping_address_fallback_badge"
+                                                                        severity="contrast"
+                                                                        size="small"
+                                                                    />
+                                                                    <span class="break-words">
+                                                                        {{ resolveCustomerAddress(order).value || i18n.n_a }}
+                                                                    </span>
+                                                                </div>
 
-                                                                <span>
-                                                                    {{ order.customer.shipping_address_1 }}{{ order.customer.shipping_address_2 ? ', ' + order.customer.shipping_address_2 : '' }},
-                                                                    {{ order.customer.shipping_city }}, {{ order.customer.shipping_state }} {{ order.customer.shipping_postcode }},
-                                                                    {{ order.customer.shipping_country }}
+                                                                <span
+                                                                    v-if="resolveCustomerAddress(order).isFallback"
+                                                                    class="text-xs text-slate-500"
+                                                                >
+                                                                    {{ i18n.shipping_address_fallback_note }}
                                                                 </span>
-
                                                             </div>
                                                         </div>
                                                     </template>
@@ -1880,6 +1893,114 @@
                             return entry.group ? `${entry.group} • ${entry.label}` : entry.label;
                         }
                         return group.carrier_name || group.carrier_code;
+                    },
+                    addressHasData(address = {}) {
+                        const keys = ['address_1', 'address_2', 'city', 'state', 'postcode', 'country'];
+                        return keys.some((key) => {
+                            const value = address[key];
+                            return value !== undefined && value !== null && String(value).trim() !== '';
+                        });
+                    },
+                    formatAddressString(address = {}) {
+                        const parts = [];
+                        const street = [address.address_1, address.address_2]
+                            .map(part => (part ?? '').toString().trim())
+                            .filter(Boolean)
+                            .join(', ');
+                        if (street) {
+                            parts.push(street);
+                        }
+
+                        const localityPieces = [];
+                        const cityState = [address.city, address.state]
+                            .map(part => (part ?? '').toString().trim())
+                            .filter(Boolean)
+                            .join(', ');
+                        if (cityState) {
+                            localityPieces.push(cityState);
+                        }
+                        if (address.postcode) {
+                            localityPieces.push(String(address.postcode).trim());
+                        }
+                        if (localityPieces.length) {
+                            parts.push(localityPieces.join(' '));
+                        }
+
+                        if (address.country) {
+                            parts.push(String(address.country).trim());
+                        }
+
+                        return parts.filter(Boolean).join(', ');
+                    },
+                    resolveCustomerAddress(order) {
+                        const customer = order?.customer || {};
+                        const shipping = {
+                            address_1: customer.shipping_address_1,
+                            address_2: customer.shipping_address_2,
+                            city: customer.shipping_city,
+                            state: customer.shipping_state,
+                            postcode: customer.shipping_postcode,
+                            country: customer.shipping_country
+                        };
+                        const billing = {
+                            address_1: customer.address_1,
+                            address_2: customer.address_2,
+                            city: customer.city,
+                            state: customer.state,
+                            postcode: customer.postcode,
+                            country: customer.country
+                        };
+
+                        const hasShipping = this.addressHasData(shipping);
+                        const hasBilling = this.addressHasData(billing);
+                        if (!hasShipping && !hasBilling) {
+                            return {
+                                label: this.i18n.shipping_address,
+                                value: '',
+                                isFallback: false
+                            };
+                        }
+
+                        const preferred = hasShipping ? shipping : billing;
+
+                        return {
+                            label: hasShipping ? this.i18n.shipping_address : (this.i18n.billing_address || 'Billing Address'),
+                            value: this.formatAddressString(preferred),
+                            isFallback: !hasShipping && hasBilling
+                        };
+                    },
+                    resolveCustomerName(order) {
+                        const customer = order?.customer || {};
+                        const buildName = (first, last) => {
+                            return [first, last]
+                                .map(part => (part ?? '').toString().trim())
+                                .filter(Boolean)
+                                .join(' ')
+                                .trim();
+                        };
+
+                        const shippingName = buildName(customer.shipping_first_name, customer.shipping_last_name);
+                        if (shippingName) {
+                            return shippingName;
+                        }
+
+                        return buildName(customer.first_name, customer.last_name);
+                    },
+                    resolveCustomerEmail(order) {
+                        const customer = order?.customer || {};
+                        const shippingEmail = (customer.shipping_email ?? '').toString().trim();
+                        if (shippingEmail) {
+                            return shippingEmail;
+                        }
+                        return (customer.email ?? '').toString().trim();
+                    },
+                    resolveCustomerPhone(order) {
+                        const customer = order?.customer || {};
+                        const shippingPhone = (customer.shipping_phone ?? '').toString().trim();
+                        if (shippingPhone) {
+                            return shippingPhone;
+                        }
+                        return (customer.phone ?? '').toString().trim();
                     },
                     filterOrders() {
                         // When user selects a new status, reset pagination and fetch orders with the selected status
