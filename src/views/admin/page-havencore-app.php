@@ -284,11 +284,12 @@
                 this.unreadPoller = null;
             },
             showUnreadBadge(item) {
-                if (item.route === '/communications') {
-                    const active = this.isRouteActive('/communications');
-                    return !active && this.hasUnreadCommunications;
+                if (!item || item.route !== '/communications') {
+                    return false;
                 }
-                return this.isRouteActive(item.route) && this.hasUnreadCommunications;
+
+                const active = this.isRouteActive('/communications');
+                return !active && this.hasUnreadCommunications;
             },
             manageUnreadPolling() {
                 if (this.shouldTrackUnread()) {
