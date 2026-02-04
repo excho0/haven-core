@@ -88,6 +88,25 @@
             .p-datatable-tbody > tr > td {
                 text-align: center !important;
             }
+
+            .hc-products-table {
+                display: flex;
+                flex-direction: column;
+                min-height: 0;
+            }
+
+            .hc-products-table .p-datatable-wrapper {
+                flex: 1 1 auto;
+                min-height: 0;
+            }
+
+            .hc-products-table .p-paginator-bottom {
+                position: sticky;
+                bottom: 0;
+                background: #ffffff;
+                z-index: 2;
+                border-top: 1px solid #e5e7eb;
+            }
         </style>
     </head>
     <body>
@@ -3084,7 +3103,7 @@
                     }
                 },
                 template: `
-                    <div class="overflow-y-auto h-full p-4 space-y-4">
+                    <div class="h-full p-4 flex flex-col gap-4 min-h-0">
                         <div class="flex flex-wrap gap-2 items-center justify-between">
                             <h4 class="m-0">{{ i18n.products }}</h4>
                             <IconField>
@@ -3140,23 +3159,24 @@
                                     </div>
                                 </div>
                             </div>
-                            <DataTable
-                                v-else
-                                key="table"
-                                :value="items"
-                                dataKey="id"
-                                v-model:selection="selected"
-                                selectionMode="single"
-                                scrollable
-                                scrollHeight="75svh"
-                                :paginator="true"
-                                :lazy="true"
-                                :first="first"
-                                :rows="perPage"
-                                :totalRecords="total"
-                                @page="onPage"
-                                :filters="filters"
-                            >
+                            <div v-else key="table" class="flex-1 min-h-0">
+                                <DataTable
+                                    :value="items"
+                                    dataKey="id"
+                                    v-model:selection="selected"
+                                    selectionMode="single"
+                                    scrollable
+                                    scrollHeight="flex"
+                                    :paginator="true"
+                                    paginatorPosition="bottom"
+                                    :lazy="true"
+                                    :first="first"
+                                    :rows="perPage"
+                                    :totalRecords="total"
+                                    @page="onPage"
+                                    :filters="filters"
+                                    class="hc-products-table"
+                                >
                                 <Column selectionMode="multiple" style="width: 3rem" :exportable="false"></Column>
                                 <Column field="id" :header="i18n.id || '#'" style="min-width: 6rem"></Column>
                                 <Column field="name" :header="i18n.name || 'Name'" style="min-width: 16rem">
@@ -3232,7 +3252,8 @@
                                         </div>
                                     </template>
                                 </Column>
-                            </DataTable>
+                                </DataTable>
+                            </div>
                         </Transition>
 
                         <Dialog v-model:visible="editDialog.visible" modal :header="i18n.edit || 'Edit'" :style="{ width: '32rem' }">
