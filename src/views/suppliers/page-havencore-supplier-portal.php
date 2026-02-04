@@ -106,7 +106,8 @@
         <script type="application/json" id="app-initial-data">
             <?= json_encode([
                 'trackingCarriers' => $tracking_carriers,
-                'loginUrl'        => wp_login_url($_SERVER['REQUEST_URI']),
+                'primeicons_css'   => HAVEN_CORE_URL . 'assets/css/primeicons/primeicons.css',
+                'loginUrl'         => wp_login_url($_SERVER['REQUEST_URI']),
                 'i18n' => [
 
                     // ─── General UI ───────────────────────────────
@@ -130,6 +131,8 @@
                     'no_conversations'               => __('No conversations yet.', HAVEN_CORE_TEXT_DOMAIN),
                     'no_messages'                    => __('No messages in this conversation yet.', HAVEN_CORE_TEXT_DOMAIN),
                     'start_messaging'                => __('Type your first message to kick things off.', HAVEN_CORE_TEXT_DOMAIN),
+                    'print_customer_info'            => __('Print Customer Info', HAVEN_CORE_TEXT_DOMAIN),
+                    'print_popup_blocked'            => __('Please allow pop-ups to print the customer label.', HAVEN_CORE_TEXT_DOMAIN),
                     'new_message'                    => __('New Message', HAVEN_CORE_TEXT_DOMAIN),
                     'message_placeholder'            => __('Type a message…', HAVEN_CORE_TEXT_DOMAIN),
                     'send_message'                   => __('Send Message', HAVEN_CORE_TEXT_DOMAIN),
@@ -436,7 +439,8 @@
 
                     const Rtl = Vue.computed(() => globalStore.isRtl);
                     
-                    return {
+                return {
+                    initialData: initialData,
                     i18n: initialData.i18n,
                     currentUser: currentUser,
                     mobileIcon: "<?= esc_url(get_site_icon_url()); ?>",
@@ -996,9 +1000,22 @@
 
                                                 <Card class="-50 shadow-sm border rounded-xl overflow-hidden my-4">
                                                     <template #title>
-                                                        <div class="flex items-center gap-2  text-lg font-semibold">
-                                                            <i class="pi pi-user"></i>
-                                                            <span>{{ i18n.customer_info }}</span>
+                                                        <div class="flex items-center justify-between gap-3">
+                                                            <div class="flex items-center gap-2 text-lg font-semibold">
+                                                                <i class="pi pi-user"></i>
+                                                                <span>{{ i18n.customer_info }}</span>
+                                                            </div>
+                                                            <Button
+                                                                icon="pi pi-print"
+                                                                size="small"
+                                                                severity="contrast"
+                                                                variant="text"
+                                                                rounded
+                                                                class="shrink-0"
+                                                                v-tooltip.bottom="i18n.print_customer_info"
+                                                                :aria-label="i18n.print_customer_info"
+                                                                @click.stop="printCustomerInfo(order)"
+                                                            />
                                                         </div>
                                                     </template>
 
@@ -1921,6 +1938,201 @@
                             return shippingPhone;
                         }
                         return (customer.phone ?? '').toString().trim();
+                    },
+                    printCustomerInfo(order) {
+                        const customer = order?.customer || {};
+                        const name = this.resolveCustomerName(order) || this.i18n.n_a;
+                        const company = (customer.shipping_company ?? '').toString().trim();
+                        const email = this.resolveCustomerEmail(order);
+                        const phone = this.resolveCustomerPhone(order);
+                        const address = this.resolveCustomerAddress(order);
+
+                        const lines = [
+                            { label: this.i18n.name, value: name, icon: 'pi pi-id-card' },
+                            { label: this.i18n.company, value: company, icon: 'pi pi-building' },
+                            { label: this.i18n.email, value: email, icon: 'pi pi-envelope' },
+                            { label: this.i18n.phone, value: phone, icon: 'pi pi-phone' },
+                            { label: address.label, value: address.value, icon: 'pi pi-truck' }
+                        ];
+
+                        const orderReference = (order?.number ?? order?.id ?? '').toString().trim();
+                        const orderMeta = orderReference
+                            ? `<p class="order-meta">#${this.escapeHtml(orderReference)}</p>`
+                            : '';
+                        const renderValue = (line) => {
+                            if (!line.value) {
+                                return '';
+                            }
+                            return this.escapeHtml(line.value);
+                        };
+
+                        const htmlLines = lines
+                            .filter(line => line.value)
+                            .map(line => `
+                                <div class="label-line">
+                                    <span class="label-key">
+                                        <i class="${this.escapeHtml(line.icon || '')} label-icon"></i>
+                                        ${this.escapeHtml(line.label)}:
+                                    </span>
+                                    <span class="label-value">${renderValue(line)}</span>
+                                </div>
+                            `)
+                            .join('');
+
+                        const printContainerId = 'hc-print-label';
+                        const printStyleId = 'hc-print-style';
+                        let printContainer = document.getElementById(printContainerId);
+                        if (!printContainer) {
+                            printContainer = document.createElement('div');
+                            printContainer.id = printContainerId;
+                            document.body.appendChild(printContainer);
+                        }
+
+                        let printStyle = document.getElementById(printStyleId);
+                        if (!printStyle) {
+                            printStyle = document.createElement('style');
+                            printStyle.id = printStyleId;
+                            printStyle.textContent = `
+                                @page { size: 5.5in 4in; margin: 0.2in; }
+                                body.hc-printing > :not(#${printContainerId}) {
+                                    visibility: hidden !important;
+                                    height: 0 !important;
+                                    overflow: hidden !important;
+                                }
+                                body.hc-printing #${printContainerId} {
+                                    visibility: visible !important;
+                                    display: block !important;
+                                    position: static !important;
+                                    width: 100% !important;
+                                    height: auto !important;
+                                    padding: 0.2in !important;
+                                    box-sizing: border-box !important;
+                                }
+                                @media print {
+                                    html, body { margin: 0 !important; padding: 0 !important; }
+                                    body > :not(#${printContainerId}) { display: none !important; }
+                                    #${printContainerId} {
+                                        display: block !important;
+                                        position: static !important;
+                                        width: 100% !important;
+                                        height: auto !important;
+                                        padding: 0.2in !important;
+                                        box-sizing: border-box !important;
+                                    }
+                                }
+                                #${printContainerId} {
+                                    display: block;
+                                    font-family: 'Inter', 'Segoe UI', sans-serif;
+                                    color: #0f172a;
+                                }
+                                #${printContainerId} .label-card {
+                                    width: 100%;
+                                    min-height: 0;
+                                    padding: 16px 18px;
+                                    display: flex;
+                                    flex-direction: column;
+                                    gap: 14px;
+                                    background: #ffffff;
+                                    border: 1px solid #e2e8f0;
+                                    border-radius: 16px;
+                                    page-break-inside: avoid;
+                                    page-break-after: avoid;
+                                }
+                                #${printContainerId} .label-header {
+                                    display: flex;
+                                    align-items: baseline;
+                                    justify-content: space-between;
+                                    gap: 12px;
+                                    padding-bottom: 6px;
+                                    border-bottom: 1px solid #e2e8f0;
+                                }
+                                #${printContainerId} h1 {
+                                    font-size: 1.25rem;
+                                    margin: 0;
+                                    letter-spacing: 0.12em;
+                                }
+                                #${printContainerId} .order-meta {
+                                    font-size: 0.8rem;
+                                    letter-spacing: 0.2em;
+                                    color: #94a3b8;
+                                    margin: 0;
+                                    text-transform: uppercase;
+                                }
+                                #${printContainerId} .label-line {
+                                    display: flex;
+                                    gap: 0.75rem;
+                                    font-size: 0.92rem;
+                                    border-bottom: 1px dashed #e2e8f0;
+                                    padding-bottom: 6px;
+                                    margin-bottom: 6px;
+                                }
+                                #${printContainerId} .label-key {
+                                    flex: 0 0 24%;
+                                    font-weight: 600;
+                                    text-transform: uppercase;
+                                    font-size: 0.64rem;
+                                    color: #64748b;
+                                    letter-spacing: 0.1em;
+                                    display: inline-flex;
+                                    align-items: center;
+                                    gap: 6px;
+                                }
+                                #${printContainerId} .label-icon {
+                                    font-size: 0.8rem;
+                                    color: #64748b;
+                                }
+                                #${printContainerId} .label-value {
+                                    flex: 1;
+                                    font-weight: 700;
+                                    font-size: 0.9rem;
+                                    color: #0f172a;
+                                    line-height: 1.4;
+                                    white-space: normal;
+                                    word-break: break-word;
+                                    overflow-wrap: anywhere;
+                                }
+                            `;
+                            document.head.appendChild(printStyle);
+                        }
+
+                        printContainer.innerHTML = `
+                            <section class="label-card">
+                                <div class="label-header">
+                                    <h1>${this.escapeHtml(this.i18n.customer_info)}</h1>
+                                    ${orderMeta}
+                                </div>
+                                ${htmlLines}
+                            </section>
+                        `;
+
+                        const cleanup = () => {
+                            window.removeEventListener('afterprint', cleanup);
+                            window.removeEventListener('beforeprint', beforePrint);
+                            document.body.classList.remove('hc-printing');
+                            printContainer.innerHTML = '';
+                        };
+                        const beforePrint = () => {
+                            document.body.classList.add('hc-printing');
+                        };
+                        window.addEventListener('beforeprint', beforePrint);
+                        window.addEventListener('afterprint', cleanup);
+                        requestAnimationFrame(() => {
+                            requestAnimationFrame(() => {
+                                document.body.classList.add('hc-printing');
+                                setTimeout(() => window.print(), 200);
+                            });
+                        });
+                        setTimeout(cleanup, 5000);
+                    },
+                    escapeHtml(value) {
+                        const map = {
+                            '&': '&amp;',
+                            '<': '&lt;',
+                            '>': '&gt;',
+                            '"': '&quot;',
+                            "'": '&#39;'
+                        };
+                        return String(value ?? '').replace(/[&<>"']/g, char => map[char] || char);
                     },
                     filterOrders() {
                         // When user selects a new status, reset pagination and fetch orders with the selected status
