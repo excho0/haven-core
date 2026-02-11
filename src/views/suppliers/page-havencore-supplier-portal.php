@@ -227,6 +227,7 @@
                     'no_orders_message_subtitle'    => __('Try adjusting your filters or check back later—new orders might pop up soon!', HAVEN_CORE_TEXT_DOMAIN),
                     'no_orders_message_title'       => __('No orders found.', HAVEN_CORE_TEXT_DOMAIN),
                     'order_number'                  => __('Order #', HAVEN_CORE_TEXT_DOMAIN),
+                    'order'                         => __('Order', HAVEN_CORE_TEXT_DOMAIN),
                     'order_saved'                   => __('Order Saved Successfully', HAVEN_CORE_TEXT_DOMAIN),
                     'orders'                        => __('Orders', HAVEN_CORE_TEXT_DOMAIN),
                     'partially_fulfilled'           => __('Partially Fulfilled', HAVEN_CORE_TEXT_DOMAIN),
@@ -1925,6 +1926,9 @@
                             isFallback: !hasShipping && hasBilling
                         };
                     },
+                    resolveCustomerOrderID(order) {
+                        return ( order?.number ?? order?.id ?? '').toString().trim();
+                    },
                     resolveCustomerName(order) {
                         const customer = order?.customer || {};
                         const buildName = (first, last) => {
@@ -1959,6 +1963,7 @@
                         return (customer.phone ?? '').toString().trim();
                     },
                     printCustomerInfo(order) {
+                        const orderId = this.resolveCustomerOrderID(order);
                         const customer = order?.customer || {};
                         const name = this.resolveCustomerName(order) || this.i18n.n_a;
                         const company = (customer.shipping_company ?? '').toString().trim();
@@ -1967,6 +1972,7 @@
                         const address = this.resolveCustomerAddress(order);
 
                         const lines = [
+                            { label: this.i18n.order, value: orderId, icon: 'pi pi-shopping-cart' },
                             { label: this.i18n.name, value: name, icon: 'pi pi-id-card' },
                             { label: this.i18n.company, value: company, icon: 'pi pi-building' },
                             { label: this.i18n.email, value: email, icon: 'pi pi-envelope' },
@@ -1985,9 +1991,9 @@
                             return this.escapeHtml(line.value);
                         };
 
-                        const htmlLines = lines
-                            .filter(line => line.value)
-                            .map(line => `
+                        const visibleLines = lines.filter(line => line.value);
+                        const htmlLines = visibleLines
+                            .map((line, index) => `
                                 <div class="label-line">
                                     <span class="label-key">
                                         <i class="${this.escapeHtml(line.icon || '')} label-icon"></i>
@@ -1995,6 +2001,7 @@
                                     </span>
                                     <span class="label-value">${renderValue(line)}</span>
                                 </div>
+                                ${index < visibleLines.length - 1 ? '<div class="label-sep"></div>' : ''}
                             `)
                             .join('');
 
@@ -2012,113 +2019,111 @@
                             printStyle = document.createElement('style');
                             printStyle.id = printStyleId;
                             printStyle.textContent = `
-                                @page { size: 5.5in 4in; margin: 0.2in; }
-                                body.hc-printing > :not(#${printContainerId}) {
-                                    visibility: hidden !important;
-                                    height: 0 !important;
-                                    overflow: hidden !important;
-                                }
-                                body.hc-printing #${printContainerId} {
-                                    visibility: visible !important;
-                                    display: block !important;
-                                    position: static !important;
-                                    width: 100% !important;
-                                    height: auto !important;
-                                    padding: 0.2in !important;
-                                    box-sizing: border-box !important;
-                                }
+                                @page { size: 4in 6in; margin: 0.1in; }
                                 @media print {
-                                    html, body { margin: 0 !important; padding: 0 !important; }
-                                    body > :not(#${printContainerId}) { display: none !important; }
-                                    #${printContainerId} {
-                                        display: block !important;
-                                        position: static !important;
-                                        width: 100% !important;
-                                        height: auto !important;
-                                        padding: 0.2in !important;
-                                        box-sizing: border-box !important;
-                                    }
+                                    html, body { margin: 0; padding: 0; }
+                                    body > :not(#${printContainerId}) { display: none; }
                                 }
+                                body.hc-printing #${printContainerId} { display: block; }
                                 #${printContainerId} {
-                                    display: block;
+                                    width: 4in;
+                                    height: 6in;
+                                    padding: 0.15in;
+                                    box-sizing: border-box;
                                     font-family: 'Inter', 'Segoe UI', sans-serif;
                                     color: #0f172a;
+                                    background: #ffffff;
                                 }
                                 #${printContainerId} .label-card {
-                                    width: 100%;
-                                    min-height: 0;
-                                    padding: 16px 18px;
+                                    height: 100%;
+                                    padding: 12px 14px;
                                     display: flex;
                                     flex-direction: column;
-                                    gap: 14px;
-                                    background: #ffffff;
-                                    border: 1px solid #e2e8f0;
-                                    border-radius: 16px;
-                                    page-break-inside: avoid;
-                                    page-break-after: avoid;
+                                    gap: 16px;
                                 }
                                 #${printContainerId} .label-header {
                                     display: flex;
-                                    align-items: baseline;
+                                    align-items: center;
                                     justify-content: space-between;
                                     gap: 12px;
-                                    padding-bottom: 6px;
-                                    border-bottom: 1px solid #e2e8f0;
+                                    margin-bottom: 10px;
+                                    padding-bottom: 10px;
+                                    border-bottom: 2px solid #0f172a;
                                 }
+                                #${printContainerId} .label-meta {
+                                    display: flex;
+                                    flex-direction: row;
+                                    align-items: flex-end;
+                                    justify-content: flex-center;
+                                    items-align: center;
+                                    gap: 6px;
+                                }
+                                #${printContainerId} .label-logo { width: 52px; height: 52px; object-fit: contain; }
                                 #${printContainerId} h1 {
-                                    font-size: 1.25rem;
+                                    font-size: 1.2rem;
                                     margin: 0;
-                                    letter-spacing: 0.12em;
+                                    line-height: 1;
+                                    letter-spacing: 0.18em;
+                                    text-transform: uppercase;
                                 }
                                 #${printContainerId} .order-meta {
-                                    font-size: 0.8rem;
-                                    letter-spacing: 0.2em;
-                                    color: #94a3b8;
+                                    font-size: 0.85rem;
+                                    letter-spacing: 0.26em;
+                                    color: #1f2937;
                                     margin: 0;
                                     text-transform: uppercase;
                                 }
                                 #${printContainerId} .label-line {
                                     display: flex;
-                                    gap: 0.75rem;
-                                    font-size: 0.92rem;
-                                    border-bottom: 1px dashed #e2e8f0;
-                                    padding-bottom: 6px;
-                                    margin-bottom: 6px;
+                                    gap: 0.85rem;
+                                    font-size: 0.98rem;
+                                }
+                                #${printContainerId} .label-line:first-of-type {
+                                    margin-top: 6px;
+                                }
+                                #${printContainerId} .label-sep {
+                                    display: block;
+                                    width: 100%;
+                                    height: 0;
+                                    margin: 12px 0;
+                                    border-top: 1pt solid #0f172a;
                                 }
                                 #${printContainerId} .label-key {
                                     flex: 0 0 24%;
                                     font-weight: 600;
                                     text-transform: uppercase;
-                                    font-size: 0.64rem;
-                                    color: #64748b;
-                                    letter-spacing: 0.1em;
+                                    font-size: 0.68rem;
+                                    color: #111827;
+                                    letter-spacing: 0.16em;
                                     display: inline-flex;
                                     align-items: center;
                                     gap: 6px;
                                 }
-                                #${printContainerId} .label-icon {
-                                    font-size: 0.8rem;
-                                    color: #64748b;
-                                }
+                                #${printContainerId} .label-icon { font-size: 0.85rem; color: #111827; }
                                 #${printContainerId} .label-value {
                                     flex: 1;
-                                    font-weight: 700;
-                                    font-size: 0.9rem;
-                                    color: #0f172a;
-                                    line-height: 1.4;
-                                    white-space: normal;
+                                    font-weight: 800;
+                                    font-size: 1.02rem;
+                                    color: #0b1220;
+                                    line-height: 1.35;
                                     word-break: break-word;
-                                    overflow-wrap: anywhere;
                                 }
                             `;
                             document.head.appendChild(printStyle);
                         }
 
+                        const logoUrl = (this.mobileIcon || '').toString().trim();
+                        const logoMarkup = logoUrl
+                            ? `<img class="label-logo" src="${this.escapeHtml(logoUrl)}" alt="${this.escapeHtml(this.i18n.customer_info)}" />`
+                            : '';
+
                         printContainer.innerHTML = `
                             <section class="label-card">
                                 <div class="label-header">
                                     <h1>${this.escapeHtml(this.i18n.customer_info)}</h1>
-                                    ${orderMeta}
+                                    <div class="label-meta">
+                                        ${logoMarkup}
+                                    </div>
                                 </div>
                                 ${htmlLines}
                             </section>
