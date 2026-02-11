@@ -67,6 +67,7 @@ class ScriptHelpers
             'withDotLottie'   => false,
             'withConfetti'    => false,
             'withDraggable'   => false,   // Draggable bundle (Sortable + VueDraggable)
+            'withMiniQr'      => false,
             'withTheme'       => true,
             'withTailwind'    => true,
             'withPrimeIcons'  => true,
@@ -114,6 +115,10 @@ class ScriptHelpers
             $scripts[] = "$base/js/Sortable.min.js";                // 🟢 Sortable core
             $scripts[] = "$base/js/vuedraggable.umd.js";            // 🟢 Vue draggable (same file for both modes)
         }   
+
+        if ($opts['withMiniQr']) {
+            $scripts[] = "$base/js/mini-qr.umd.prod.js";
+        }
 
         if ($opts['withTheme']) {
             $scripts[] = "$base/js/aura.min.js";

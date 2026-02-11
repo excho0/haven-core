@@ -103,6 +103,44 @@ class HC_Settings {
                 'tooltip' => 'Enforces strict field validation when adding new suppliers.',
                 'icon'    => 'pi pi-shield',
             ],
+            'customer_info_print' => [
+                'icon' => 'pi pi-print',
+                'use_mobile_icon' => [
+                    'key'     => 'print_label_use_mobile_icon',
+                    'default' => false,
+                    'tooltip' => 'Show the site icon on printed customer labels instead of the site logo.',
+                    'icon'    => 'pi pi-image',
+                ],
+                'footer' => [
+                    'icon' => 'pi pi-align-center',
+                    'enabled' => [
+                        'key'     => 'print_label_footer_enabled',
+                        'default' => true,
+                        'tooltip' => 'Show the footer on printed customer labels.',
+                        'icon'    => 'pi pi-check-square',
+                    ],
+                    'qr_enabled' => [
+                        'key'     => 'print_label_footer_qr_enabled',
+                        'default' => false,
+                        'tooltip' => 'Show a QR code in the footer of printed customer labels.',
+                        'icon'    => 'pi pi-qrcode',
+                        'disabled_when' => [
+                            'path'  => 'suppliers.customer_info_print.footer.enabled',
+                            'value' => false,
+                        ],
+                    ],
+                    'qr_link' => [
+                        'key'     => 'print_label_footer_qr_link',
+                        'default' => '/contact',
+                        'tooltip' => 'Link encoded into the footer QR code.',
+                        'icon'    => 'pi pi-link',
+                        'disabled_when' => [
+                            'path'  => 'suppliers.customer_info_print.footer.qr_enabled',
+                            'value' => false,
+                        ],
+                    ],
+                ],
+            ],
         ],
         'integrations' => [
             'icon' => 'pi pi-sitemap',

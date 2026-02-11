@@ -154,6 +154,10 @@ class ArrayHelpers
                     'icon'    => $def['icon'] ?? '',
                 ];
 
+                if (array_key_exists('disabled_when', $def)) {
+                    $out[$key]['disabled_when'] = $def['disabled_when'];
+                }
+
                 if (array_key_exists('hidden', $def)) {
                     $out[$key]['hidden'] = (bool) $def['hidden'];
                 }

@@ -7,11 +7,13 @@
 
     use HavenCore\Utils\ScriptHelpers;
     use HavenCore\Utils\Tracking_Carriers;
+    use HavenCore\Classes\HC_Settings;
 
     ScriptHelpers::loadApiFetch(); // ✅ Injects wp-api-fetch and nonce safely
 
     ScriptHelpers::loadVue([
         'withDraggable'    => true,
+        'withMiniQr'       => true,
     ]);
 
     // Get the current user and their locale
@@ -30,6 +32,8 @@
     $locale_attributes = ob_get_clean();  // Capture the output
 
     $tracking_carriers = Tracking_Carriers::get_carrier_groups();
+    $settings = new HC_Settings(true);
+    $customer_info_print_settings = $settings->get('suppliers.customer_info_print', []);
 
     // Handle POST from the "Continue Anyway" form
     // if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_continue'])) {
@@ -117,7 +121,7 @@
         ]); ?>
 
 
-
+        
         <div id="havencore-app" class="hc-supplier-portal-app">
             <havencore-app></havencore-app>
         </div>
@@ -125,6 +129,12 @@
         <script type="application/json" id="app-initial-data">
             <?= json_encode([
                 'trackingCarriers' => $tracking_carriers,
+                'siteUrl'          => home_url('/'),
+                'settings' => [
+                    'suppliers' => [
+                        'customer_info_print' => $customer_info_print_settings,
+                    ],
+                ],
                 'primeicons_css'   => HAVEN_CORE_URL . 'assets/css/primeicons/primeicons.css',
                 'loginUrl'         => wp_login_url($_SERVER['REQUEST_URI']),
                 'i18n' => [
@@ -291,6 +301,7 @@
             ]); ?>;
 
             // console.log('currentUser inital Data:', currentUser);
+            console.log('MiniQr:', window.MiniQr)
             
             const initialData = JSON.parse(document.getElementById('app-initial-data')?.textContent || '{}');
             const portalLoginUrl = initialData.loginUrl || <?= json_encode(wp_login_url($_SERVER['REQUEST_URI'])); ?>;
@@ -464,6 +475,9 @@
                     i18n: initialData.i18n,
                     currentUser: currentUser,
                     mobileIcon: "<?= esc_url(get_site_icon_url()); ?>",
+                    siteLogo: "<?= esc_url(wp_get_attachment_image_url(get_theme_mod('custom_logo'), 'full')); ?>",
+                    siteUrl: initialData.siteUrl || '',
+                    settings: initialData.settings || {},
                     sidebarItems: sidebarItems || [], // Sidebar items for navigation
                     mobile: mobile,
                     isRtl: Rtl,
@@ -477,6 +491,8 @@
                         i18n: this.i18n,
                         currentUser: this.currentUser,
                         mobileIcon: this.mobileIcon,
+                        siteLogo: this.siteLogo,
+                        settings: this.settings,
                         mobile: this.mobile,
                         isAdmin: false,
                         isRtl: this.isRtl,
@@ -684,7 +700,7 @@
 
 
             const Orders = {
-                inject: ['i18n', 'mobileIcon'],
+                inject: ['i18n', 'mobileIcon', 'siteLogo', 'settings'],
                 data() {
 
                     // Access the Pinia store
@@ -1068,7 +1084,7 @@
 
                                                             <div class="flex flex-col gap-1">
                                                                 <div class="flex items-start gap-2 flex-wrap">
-                                                                    <i class="pi pi-truck "></i>
+                                                                    <i class="pi pi-map-marker"></i>
                                                                     <span class="font-medium">{{ resolveCustomerAddress(order).label }}:</span>
                                                                     <Badge
                                                                         v-if="resolveCustomerAddress(order).isFallback"
@@ -1977,36 +1993,24 @@
                             { label: this.i18n.company, value: company, icon: 'pi pi-building' },
                             { label: this.i18n.email, value: email, icon: 'pi pi-envelope' },
                             { label: this.i18n.phone, value: phone, icon: 'pi pi-phone' },
-                            { label: address.label, value: address.value, icon: 'pi pi-truck' }
+                            { label: this.i18n.shipping_address, value: address.value, icon: 'pi pi-map-marker' }
                         ];
-
-                        const orderReference = (order?.number ?? order?.id ?? '').toString().trim();
-                        const orderMeta = orderReference
-                            ? `<p class="order-meta">#${this.escapeHtml(orderReference)}</p>`
-                            : '';
-                        const renderValue = (line) => {
-                            if (!line.value) {
-                                return '';
-                            }
-                            return this.escapeHtml(line.value);
-                        };
-
-                        const visibleLines = lines.filter(line => line.value);
-                        const htmlLines = visibleLines
-                            .map((line, index) => `
-                                <div class="label-line">
-                                    <span class="label-key">
-                                        <i class="${this.escapeHtml(line.icon || '')} label-icon"></i>
-                                        ${this.escapeHtml(line.label)}:
-                                    </span>
-                                    <span class="label-value">${renderValue(line)}</span>
-                                </div>
-                                ${index < visibleLines.length - 1 ? '<div class="label-sep"></div>' : ''}
-                            `)
-                            .join('');
 
                         const printContainerId = 'hc-print-label';
                         const printStyleId = 'hc-print-style';
+
+                        const orderReference = (order?.number ?? order?.id ?? '').toString().trim();
+                        const visibleLines = lines.filter(line => line.value);
+                        const footerSettings = this.settings?.suppliers?.customer_info_print?.footer || {};
+                        const footerEnabled = footerSettings.enabled !== false;
+                        const qrEnabled = !!footerSettings.qr_enabled;
+                        const qrLink = (footerSettings.qr_link || '/contact').toString().trim();
+                        const baseUrl = (this.siteUrl || `${window.location.origin}/`).toString();
+                        const qrTarget = qrLink ? new URL(qrLink, baseUrl).href : baseUrl;
+                        const qrSize = 72;
+                        const qrAvailable = !!window.MiniQr?.MiniQr;
+                        let printApp = null;
+
                         let printContainer = document.getElementById(printContainerId);
                         if (!printContainer) {
                             printContainer = document.createElement('div');
@@ -2028,111 +2032,207 @@
                                 #${printContainerId} {
                                     width: 4in;
                                     height: 6in;
-                                    padding: 0.15in;
+                                    padding: 5px;
+                                    border: 3px solid #000000;
                                     box-sizing: border-box;
                                     font-family: 'Inter', 'Segoe UI', sans-serif;
                                     color: #0f172a;
                                     background: #ffffff;
                                 }
-                                #${printContainerId} .label-card {
+                                #${printContainerId} .customer-info-print {
                                     height: 100%;
-                                    padding: 12px 14px;
+                                    padding: 0;
                                     display: flex;
                                     flex-direction: column;
-                                    gap: 16px;
+                                    gap: 12px;
+                                    position: relative;
                                 }
-                                #${printContainerId} .label-header {
+                                #${printContainerId} .customer-info-header {
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: space-between;
+                                    gap: 10px;
+                                    margin-bottom: 8px;
+                                    padding: 0 12px 8px;
+                                    border-bottom: 1.5pt solid #0f172a;
+                                }
+                                #${printContainerId} .customer-info-header-left {
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 10px;
+                                }
+                                #${printContainerId} .customer-info-meta {
+                                    display: flex;
+                                    flex-direction: column;
+                                    align-items: flex-end;
+                                    gap: 4px;
+                                }
+                                #${printContainerId} .customer-info-logo-img { width: 64px; height: 64px; object-fit: contain; }
+                                #${printContainerId} h1 {
+                                    font-size: 1.1rem;
+                                    font-weight: 600;
+                                    margin: 0;
+                                    line-height: 1;
+                                    letter-spacing: 0.08em;
+                                    text-transform: uppercase;
+                                }
+                                #${printContainerId} .customer-info-order-meta {
+                                    font-size: 0.8rem;
+                                    letter-spacing: 0.16em;
+                                    color: #334155;
+                                    margin: 0;
+                                    text-transform: uppercase;
+                                }
+                                #${printContainerId} .customer-info-row {
+                                    display: flex;
+                                    gap: 0.7rem;
+                                    font-size: 0.98rem;
+                                    padding: 0 12px;
+                                }
+                                #${printContainerId} .customer-info-row:first-of-type {
+                                    margin-top: 4px;
+                                }
+                                #${printContainerId} .customer-info-separator {
+                                    display: block;
+                                    width: 100%;
+                                    height: 1px;
+                                    margin: 8px 0;
+                                    background: #cbd5e1;
+                                    border-top: 1px solid #cbd5e1;
+                                }
+                                #${printContainerId} .customer-info-label {
+                                    flex: 0 0 24%;
+                                    font-weight: 600;
+                                    text-transform: uppercase;
+                                    font-size: 0.62rem;
+                                    color: #475569;
+                                    letter-spacing: 0.12em;
+                                    display: inline-flex;
+                                    align-items: center;
+                                    gap: 10px;
+                                }
+                                #${printContainerId} .customer-info-icon { 
+                                    font-size: 1rem; 
+                                    color: #475569;
+                                    font-weight: 800;
+                                }
+                                #${printContainerId} .customer-info-value {
+                                    flex: 1;
+                                    font-weight: 700;
+                                    font-size: 0.85rem;
+                                    color: #0f172a;
+                                    line-height: 1.4;
+                                    word-break: break-word;
+                                }
+                                #${printContainerId} .customer-info-footer {
+                                    position: absolute;
+                                    left: 0;
+                                    right: 0;
+                                    bottom: 0;
+                                    padding: 6px 4px;
                                     display: flex;
                                     align-items: center;
                                     justify-content: space-between;
                                     gap: 12px;
-                                    margin-bottom: 10px;
-                                    padding-bottom: 10px;
-                                    border-bottom: 2px solid #0f172a;
+                                    border-top: 0.5pt solid #e2e8f0;
                                 }
-                                #${printContainerId} .label-meta {
+                                #${printContainerId} .customer-info-footer-text {
+                                    font-size: 0.7rem;
+                                    color: #64748b;
+                                    letter-spacing: 0.08em;
+                                    text-transform: uppercase;
+                                }
+                                #${printContainerId} .customer-info-qr {
+                                    width: ${qrSize}px;
+                                    height: ${qrSize}px;
                                     display: flex;
-                                    flex-direction: row;
-                                    align-items: flex-end;
-                                    justify-content: flex-center;
-                                    items-align: center;
-                                    gap: 6px;
-                                }
-                                #${printContainerId} .label-logo { width: 52px; height: 52px; object-fit: contain; }
-                                #${printContainerId} h1 {
-                                    font-size: 1.2rem;
-                                    margin: 0;
-                                    line-height: 1;
-                                    letter-spacing: 0.18em;
-                                    text-transform: uppercase;
-                                }
-                                #${printContainerId} .order-meta {
-                                    font-size: 0.85rem;
-                                    letter-spacing: 0.26em;
-                                    color: #1f2937;
-                                    margin: 0;
-                                    text-transform: uppercase;
-                                }
-                                #${printContainerId} .label-line {
-                                    display: flex;
-                                    gap: 0.85rem;
-                                    font-size: 0.98rem;
-                                }
-                                #${printContainerId} .label-line:first-of-type {
-                                    margin-top: 6px;
-                                }
-                                #${printContainerId} .label-sep {
-                                    display: block;
-                                    width: 100%;
-                                    height: 0;
-                                    margin: 12px 0;
-                                    border-top: 1pt solid #0f172a;
-                                }
-                                #${printContainerId} .label-key {
-                                    flex: 0 0 24%;
-                                    font-weight: 600;
-                                    text-transform: uppercase;
-                                    font-size: 0.68rem;
-                                    color: #111827;
-                                    letter-spacing: 0.16em;
-                                    display: inline-flex;
                                     align-items: center;
-                                    gap: 6px;
-                                }
-                                #${printContainerId} .label-icon { font-size: 0.85rem; color: #111827; }
-                                #${printContainerId} .label-value {
-                                    flex: 1;
-                                    font-weight: 800;
-                                    font-size: 1.02rem;
-                                    color: #0b1220;
-                                    line-height: 1.35;
-                                    word-break: break-word;
+                                    justify-content: center;
                                 }
                             `;
                             document.head.appendChild(printStyle);
                         }
 
-                        const logoUrl = (this.mobileIcon || '').toString().trim();
-                        const logoMarkup = logoUrl
-                            ? `<img class="label-logo" src="${this.escapeHtml(logoUrl)}" alt="${this.escapeHtml(this.i18n.customer_info)}" />`
-                            : '';
-
-                        printContainer.innerHTML = `
-                            <section class="label-card">
-                                <div class="label-header">
-                                    <h1>${this.escapeHtml(this.i18n.customer_info)}</h1>
-                                    <div class="label-meta">
-                                        ${logoMarkup}
+                        const useMobileIcon = !!this.settings?.suppliers?.customer_info_print?.use_mobile_icon;
+                        const preferredLogo = useMobileIcon ? this.mobileIcon : this.siteLogo;
+                        const logoUrl = (preferredLogo || this.siteLogo || this.mobileIcon || '').toString().trim();
+                        const thisParent = this;
+                        printContainer.innerHTML = '';
+                        printApp = Vue.createApp({
+                            data() {
+                                return {
+                                    i18n: thisParent.i18n,
+                                    orderReference,
+                                    logoUrl,
+                                    lines: visibleLines,
+                                    footerEnabled,
+                                    qrEnabled,
+                                    qrAvailable,
+                                    qrTarget,
+                                    qrSize,
+                                    qrLink: qrLink || '/contact'
+                                };
+                            },
+                            template: `
+                                <section class="customer-info-print">
+                                    <div class="customer-info-header">
+                                        <div class="customer-info-header-left">
+                                            <i class="pi pi-user customer-info-icon"></i>
+                                            <h1>{{ i18n.customer_info }}</h1>
+                                        </div>
+                                        <div class="customer-info-meta">
+                                            <div class="customer-info-logo" v-if="logoUrl">
+                                                <img class="customer-info-logo-img" :src="logoUrl" :alt="i18n.customer_info" />
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                                ${htmlLines}
-                            </section>
-                        `;
+
+                                    <template v-for="(line, index) in lines" :key="index">
+                                        <div class="customer-info-row">
+                                            <span class="customer-info-label">
+                                                <i :class="[line.icon, 'customer-info-icon']"></i>
+                                                {{ line.label }}:
+                                            </span>
+                                            <span class="customer-info-value">{{ line.value }}</span>
+                                        </div>
+                                        <div v-if="index < lines.length - 1" class="customer-info-separator"></div>
+                                    </template>
+
+                                    <div v-if="footerEnabled" class="customer-info-footer">
+                                        <div class="customer-info-footer-text">
+                                            <!-- {{ qrLink }} -->
+                                        </div>
+                                        <div v-if="qrEnabled && qrAvailable" class="customer-info-qr">
+                                            <MiniQr
+                                                :data="qrTarget"
+                                                :width="qrSize"
+                                                :height="qrSize"
+                                                :margin="4"
+                                                :qrOptions="{ errorCorrectionLevel: 'H' }"
+                                                :dotsOptions="{ type: 'square', color: '#000', roundSize: false }"
+                                                :backgroundOptions="{ color: '#fff' }"
+                                            />
+                                        </div>
+                                    </div>
+                                </section>
+                            `
+                        });
+                        if (qrAvailable) {
+                            printApp.component('MiniQr', window.MiniQr.MiniQr);
+                        }
+                        printApp.mount(printContainer);
 
                         const cleanup = () => {
                             window.removeEventListener('afterprint', cleanup);
                             window.removeEventListener('beforeprint', beforePrint);
                             document.body.classList.remove('hc-printing');
+                            if (printApp && typeof printApp.unmount === 'function') {
+                                try {
+                                    printApp.unmount();
+                                } catch (err) {
+                                    console.warn('Print app unmount failed.', err);
+                                }
+                            }
                             printContainer.innerHTML = '';
                         };
                         const beforePrint = () => {
@@ -2147,16 +2247,6 @@
                             });
                         });
                         setTimeout(cleanup, 5000);
-                    },
-                    escapeHtml(value) {
-                        const map = {
-                            '&': '&amp;',
-                            '<': '&lt;',
-                            '>': '&gt;',
-                            '"': '&quot;',
-                            "'": '&#39;'
-                        };
-                        return String(value ?? '').replace(/[&<>"']/g, char => map[char] || char);
                     },
                     filterOrders() {
                         // When user selects a new status, reset pagination and fetch orders with the selected status

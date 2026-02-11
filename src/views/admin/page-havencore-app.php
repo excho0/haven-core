@@ -1515,7 +1515,181 @@
         inject: ['i18n'],  // Inject the i18n data into this component
     };
 
+    const SettingsNode = {
+        name: 'SettingsNode',
+        props: {
+            node: { type: [Object, Boolean, String, Number], required: true },
+            path: { type: Array, required: true },
+            settings: { type: Object, required: true },
+            originalSettings: { type: Object, required: true },
+            i18n: { type: Object, required: true },
+            fieldMeta: { type: Object, required: true },
+            panelStates: { type: Object, required: true },
+            panelsReady: { type: Boolean, required: true },
+            isHidden: { type: Function, required: true },
+            isChangedPath: { type: Function, required: true },
+            isRtl: { type: Boolean, required: true }
+        },
+        computed: {
+            pathString() {
+                return this.path.join('.');
+            },
+            keyName() {
+                return this.path[this.path.length - 1];
+            }
+        },
+        methods: {
+            isObject(value) {
+                return typeof value === 'object' && value !== null && !Array.isArray(value);
+            },
+            labelFor(pathStr, fallback) {
+                return this.i18n[pathStr]?.label || fallback.replace(/_/g, ' ');
+            },
+            tooltipFor(pathStr) {
+                return this.i18n[pathStr]?.tooltip || '';
+            },
+            iconFor(pathStr, fallback = 'pi pi-folder-open') {
+                const segments = pathStr.split('.');
+                let meta = this.fieldMeta;
+                for (const segment of segments) {
+                    if (!meta || typeof meta !== 'object') {
+                        return fallback;
+                    }
+                    meta = meta[segment];
+                }
+                return meta?.icon || fallback;
+            },
+            disabledRuleFor(pathStr) {
+                const segments = pathStr.split('.');
+                let meta = this.fieldMeta;
+                for (const segment of segments) {
+                    if (!meta || typeof meta !== 'object') {
+                        return null;
+                    }
+                    meta = meta[segment];
+                }
+                return meta?.disabled_when || null;
+            },
+            isDisabled(pathStr) {
+                const rule = this.disabledRuleFor(pathStr);
+                if (!rule || typeof rule !== 'object') {
+                    return false;
+                }
+                const rulePath = Array.isArray(rule.path) ? rule.path : String(rule.path || '').split('.');
+                if (!rulePath.length) {
+                    return false;
+                }
+                const current = this.getValueAtPath(this.settings.data, rulePath);
+                return current === rule.value;
+            },
+            getValueAtPath(obj, path) {
+                return path.reduce((acc, key) => (acc ? acc[key] : undefined), obj);
+            },
+            setValueAtPath(obj, path, value) {
+                let target = obj;
+                for (let i = 0; i < path.length - 1; i++) {
+                    const key = path[i];
+                    if (typeof target[key] !== 'object' || target[key] === null) {
+                        target[key] = {};
+                    }
+                    target = target[key];
+                }
+                target[path[path.length - 1]] = value;
+            }
+        },
+        template: `
+            <div v-if="isObject(node) && !isHidden(pathString)">
+                <Panel
+                    toggleable
+                    class="ml-4"
+                    v-if="panelsReady"
+                    v-model:collapsed="panelStates[pathString]"
+                >
+                    <template #header>
+                        <span class="flex items-center gap-3 text-base font-semibold capitalize tracking-wide">
+                            <i
+                                :class="iconFor(pathString)"
+                                class="text-lg !text-primary-500"
+                                v-tooltip.top="tooltipFor(pathString)"
+                            />
+                            {{ labelFor(pathString, keyName) }}
+                        </span>
+                    </template>
+
+                    <div class="space-y-4">
+                        <SettingsNode
+                            v-for="(childVal, childKey) in node"
+                            :key="childKey"
+                            :node="childVal"
+                            :path="[...path, childKey]"
+                            :settings="settings"
+                            :original-settings="originalSettings"
+                            :i18n="i18n"
+                            :field-meta="fieldMeta"
+                            :panel-states="panelStates"
+                            :panels-ready="panelsReady"
+                            :is-hidden="isHidden"
+                            :is-changed-path="isChangedPath"
+                            :is-rtl="isRtl"
+                        />
+                    </div>
+                </Panel>
+            </div>
+
+            <div v-else-if="!isHidden(pathString)" class="mb-4">
+                <template v-if="typeof node === 'boolean'">
+                    <div class="setting-option_boolean flex items-center justify-between shadow-sm">
+                        <span class="flex items-center gap-2 font-medium capitalize">
+                            <i
+                                :class="iconFor(pathString, 'pi pi-cog')"
+                                class="text-lg !text-primary-500"
+                            />
+                            {{ labelFor(pathString, keyName) }}
+                            <i
+                                v-if="tooltipFor(pathString)"
+                                class="pi pi-question-circle text-primary-400 cursor-pointer"
+                                v-tooltip="{
+                                    value: tooltipFor(pathString),
+                                    viewerMessageSide() {
+                                        return isRtl ? 'right' : 'left';
+                                    },
+                                    autoHide: false
+                                }"
+                                style="font-size: 1rem;"
+                            />
+                        </span>
+                        <ToggleSwitch
+                            :modelValue="getValueAtPath(settings.data, path)"
+                            @update:modelValue="val => setValueAtPath(settings.data, path, val)"
+                            :aria-label="labelFor(pathString, keyName)"
+                            :disabled="isDisabled(pathString)"
+                        />
+                    </div>
+                </template>
+                <FloatLabel variant="on" v-else>
+                    <IconField>
+                        <InputIcon>
+                            <i :class="iconFor(pathString, 'pi pi-pencil')" />
+                        </InputIcon>
+                        <InputText
+                            :modelValue="getValueAtPath(settings.data, path)"
+                            @update:modelValue="val => setValueAtPath(settings.data, path, val)"
+                            v-tooltip.focus.top="tooltipFor(pathString)"
+                            :class="{ 'changed-field': isChangedPath(path) }"
+                            class="w-full"
+                            :disabled="isDisabled(pathString)"
+                        />
+                    </IconField>
+                    <label>{{ labelFor(pathString, keyName) }}</label>
+                </FloatLabel>
+            </div>
+        `
+    };
+
     const Settings = {
+        components: {
+            SettingsNode
+        },
         data() {
             const globalStore = useGlobalStore();
             const localStore = useLocalStore();
@@ -1821,129 +1995,21 @@
                         </template>
 
                         <div class="space-y-4">
-                            <div v-for="(value, fieldKey) in group" :key="fieldKey">
-                                <!-- Nested object -->
-                                <div v-if="typeof value === 'object' && value !== null && !Array.isArray(value) && !isHidden(groupKey + '.' + fieldKey)">
-                                    <Panel 
-                                        toggleable 
-                                        class="ml-4"
-                                        v-if="panelsReady"
-                                        v-model:collapsed="panelStates[groupKey + '.' + fieldKey]"
-                                    >
-                                        <template #header>
-                                            <span class="flex items-center gap-3 text-base font-semibold capitalize tracking-wide">
-                                                <i
-                                                    :class="fieldMeta?.[groupKey]?.[fieldKey]?.icon || 'pi pi-folder-open'"
-                                                    class="text-lg !text-primary-500"
-                                                    v-tooltip.top="i18n[groupKey + '.' + fieldKey]?.tooltip || ''"
-                                                />
-                                                {{ i18n[groupKey + '.' + fieldKey]?.label || fieldKey.replace(/_/g, ' ') }}
-                                            </span>
-                                        </template>
-
-                                        <template v-for="(nestedVal, nestedKey) in value">
-                                            <div v-if="!isHidden(groupKey + '.' + fieldKey + '.' + nestedKey)" :key="nestedKey" class="mb-4">
-                                                <template v-if="typeof nestedVal === 'boolean'">
-                                                <div class="setting-option_boolean flex items-center justify-between shadow-sm">
-                                                    <span class="flex items-center gap-2 font-medium capitalize">
-                                                    <i 
-                                                        :class="fieldMeta?.[groupKey]?.[fieldKey]?.[nestedKey]?.icon || 'pi pi-cog'"
-                                                        class="text-lg !text-primary-500"
-                                                    />
-                                                    {{ i18n[groupKey + '.' + fieldKey + '.' + nestedKey]?.label || nestedKey.replace(/_/g, ' ') }}
-
-                                                    <!-- Dedicated tooltip icon if tooltip exists -->
-                                                    <i
-                                                        v-if="i18n[groupKey + '.' + fieldKey + '.' + nestedKey]?.tooltip"
-                                                        class="pi pi-question-circle text-primary-400 cursor-pointer"
-                                                        v-tooltip="{
-                                                            value: i18n[groupKey + '.' + fieldKey + '.' + nestedKey]?.tooltip,
-                                                            viewerMessageSide() {
-                                                                return this.isRtl ? 'right' : 'left';
-                                                            },
-                                                            autoHide: false
-                                                        }"
-                                                        style="font-size: 1rem;"
-                                                    />
-                                                    </span>
-
-                                                    <ToggleSwitch
-                                                        v-model="settings.data[groupKey][fieldKey][nestedKey]"
-                                                        :aria-label="i18n[groupKey + '.' + fieldKey + '.' + nestedKey]?.label || nestedKey"
-                                                    />
-                                                </div>
-                                                </template>
-
-                                                <FloatLabel variant="on" v-else>
-                                                    <IconField>
-                                                        <InputIcon>
-                                                            <i :class="fieldMeta?.[groupKey]?.[fieldKey]?.[nestedKey]?.icon || 'pi pi-pencil'" />
-                                                        </InputIcon>
-                                                        <InputText
-                                                            v-model="settings.data[groupKey][fieldKey][nestedKey]"
-                                                            v-tooltip.focus.top="i18n[groupKey + '.' + fieldKey + '.' + nestedKey]?.tooltip || ''"
-                                                            :class="{ 'changed-field': isChanged(groupKey, fieldKey, nestedKey) }"
-                                                            class="w-full"
-                                                        />
-                                                    </IconField>
-                                                    <label>
-                                                        {{ i18n[groupKey + '.' + fieldKey + '.' + nestedKey]?.label || nestedKey.replace(/_/g, ' ') }}
-                                                    </label>
-                                                </FloatLabel>
-                                            </div>
-                                        </template>
-                                    </Panel>
-                                </div>
-
-                                <!-- Primitive value -->
-                                <div v-else-if="!isHidden(groupKey + '.' + fieldKey)" class="mb-4">
-                                    <template v-if="typeof value === 'boolean'">
-                                        <div class="setting-option_boolean flex items-center justify-between shadow-sm">
-                                            <span class="flex items-center gap-2 font-medium capitalize">
-                                                <i
-                                                    :class="fieldMeta?.[groupKey]?.[fieldKey]?.icon || 'pi pi-cog'"
-                                                    class="text-lg text-primary-500"
-                                                />
-                                                {{ i18n[groupKey + '.' + fieldKey]?.label || fieldKey.replace(/_/g, ' ') }}
-
-                                                <!-- Dedicated tooltip icon -->
-                                                <i
-                                                    v-if="i18n[groupKey + '.' + fieldKey]?.tooltip"
-                                                    class="pi pi-question-circle text-primary-400 cursor-pointer"
-                                                    v-tooltip="{
-                                                        value: i18n[groupKey + '.' + fieldKey]?.tooltip,
-                                                        position: isRtl ? 'right' : 'left',
-                                                        autoHide: false
-                                                    }"
-                                                    style="font-size: 1rem;"
-                                                />
-                                            </span>
-
-                                            <ToggleSwitch
-                                                v-model="settings.data[groupKey][fieldKey]"
-                                                :aria-label="i18n[groupKey + '.' + fieldKey]?.label || fieldKey"
-                                            />
-                                        </div>
-                                    </template>
-
-                                    <FloatLabel variant="on" v-else>
-                                        <IconField>
-                                            <InputIcon>
-                                                <i :class="fieldMeta?.[groupKey]?.[fieldKey]?.icon || 'pi pi-pencil'" />
-                                            </InputIcon>
-                                            <InputText
-                                                v-model="settings.data[groupKey][fieldKey]"
-                                                v-tooltip.focus.top="i18n[groupKey + '.' + fieldKey]?.tooltip || ''"
-                                                :class="{ 'changed-field': isChanged(groupKey, fieldKey) }"
-                                                class="w-full"
-                                            />
-                                        </IconField>
-                                        <label>
-                                            {{ i18n[groupKey + '.' + fieldKey]?.label || fieldKey.replace(/_/g, ' ') }}
-                                        </label>
-                                    </FloatLabel>
-                                </div>
-                            </div>
+                            <SettingsNode
+                                v-for="(value, fieldKey) in group"
+                                :key="fieldKey"
+                                :node="value"
+                                :path="[groupKey, fieldKey]"
+                                :settings="settings"
+                                :original-settings="originalSettings"
+                                :i18n="i18n"
+                                :field-meta="fieldMeta"
+                                :panel-states="panelStates"
+                                :panels-ready="panelsReady"
+                                :is-hidden="isHidden"
+                                :is-changed-path="isChangedPath"
+                                :is-rtl="isRtl"
+                            />
                         </div>
                         </Panel>
                         </template>
@@ -1957,27 +2023,21 @@
         computed: {
             changesDetected() {
                 if (!this.settings?.ready || !this.settings.data) return false;
-                    const data = this.settings.data;
-                    const original = this.originalSettings || {};
-
-                    for (const groupKey in data) {
-                        const group = data[groupKey] || {};
-                        for (const fieldKey in group) {
-                            const value = group[fieldKey];
-                            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-                                for (const nestedKey in value) {
-                                    if (this.isChanged(groupKey, fieldKey, nestedKey)) {
-                                        return true;
-                                    }
-                                }
-                            } else {
-                                if (this.isChanged(groupKey, fieldKey)) {
-                                    return true;
-                                }
-                            }
-                        }
+                const hasChanges = (node, path = []) => {
+                    if (typeof node !== 'object' || node === null || Array.isArray(node)) {
+                        return this.isChangedPath(path);
                     }
-                return false;
+
+                    return Object.entries(node).some(([key, value]) => {
+                        const nextPath = [...path, key];
+                        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                            return hasChanges(value, nextPath);
+                        }
+                        return this.isChangedPath(nextPath);
+                    });
+                };
+
+                return hasChanges(this.settings.data, []);
             }
         },
         mounted() {
@@ -1986,19 +2046,19 @@
             this.initializeFilter();
             this.sectionOptions = this.buildSectionOptions();
             this.filteredSettings = this.settings?.data || {};
-
-            for (const groupKey in this.settings.data) {
-                this.panelStates[groupKey] = savedStates[groupKey] === false ? false : true;
-
-                const group = this.settings.data[groupKey];
-                for (const fieldKey in group) {
-                    const val = group[fieldKey];
-                    if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
-                        const key = `${groupKey}.${fieldKey}`;
+            const initPanelStates = (node, basePath = '') => {
+                Object.entries(node || {}).forEach(([key, value]) => {
+                    const path = basePath ? `${basePath}.${key}` : key;
+                    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                        this.panelStates[path] = savedStates[path] === false ? false : true;
+                        initPanelStates(value, path);
+                    } else if (!basePath) {
                         this.panelStates[key] = savedStates[key] === false ? false : true;
                     }
-                }
-            }
+                });
+            };
+
+            initPanelStates(this.settings.data);
 
             this.panelsReady = true;
         },
@@ -2215,6 +2275,15 @@
                 this.settings.data = JSON.parse(JSON.stringify(this.originalSettings));
             },
 
+            getValueAtPath(obj, path) {
+                return path.reduce((acc, key) => (acc ? acc[key] : undefined), obj);
+            },
+            isChangedPath(path) {
+                if (!this.settings?.ready || !this.settings.data) return false;
+                const current = this.getValueAtPath(this.settings.data, path);
+                const original = this.getValueAtPath(this.originalSettings || {}, path);
+                return current !== original;
+            },
             isChanged(groupKey, fieldKey, nestedKey = null) {
                 if (!this.settings?.ready || !this.settings.data?.[groupKey]) return false;
 
