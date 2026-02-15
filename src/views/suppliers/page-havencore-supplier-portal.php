@@ -3381,7 +3381,12 @@
                                     </div>
                                     <div class="col-span-4 text-sm">{{ i18n.supplier_price || 'Supplier Price' }}</div>
                                     <div class="col-span-8">
-                                        <InputText v-model="editDialog.item.supplier_price" class="w-40" />
+                                        <InputText
+                                            v-model="editDialog.item.supplier_price"
+                                            class="w-40 pointer-events-none select-none"
+                                            readonly
+                                            tabindex="-1"
+                                        />
                                     </div>
                                     <div class="col-span-4 text-sm">{{ i18n.status || 'Status' }}</div>
                                     <div class="col-span-8">
