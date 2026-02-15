@@ -1,6 +1,7 @@
 <?php
 
 use HavenCore\Settings\Suppliers as SuppliersSettings;
+use HavenCore\Utils\ScriptHelpers;
 
 
 add_filter('admin_body_class', function($classes) {
@@ -12,15 +13,8 @@ add_filter('admin_body_class', function($classes) {
 
 if (!current_user_can('manage_options')) return;
 
-// Enqueue the core WP REST API script
-wp_enqueue_script( 'wp-api' );
-wp_enqueue_script( 'wp-api-fetch' );
-wp_enqueue_script( 'wp-api-request' );
-
-
-use HavenCore\Utils\ScriptHelpers;
-
 ScriptHelpers::loadVue();
+ScriptHelpers::loadApiFetch();
 
 $countries = WC()->countries->get_countries();
 

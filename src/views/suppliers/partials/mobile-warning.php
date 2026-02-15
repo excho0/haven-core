@@ -9,6 +9,7 @@
     <meta charset="<?php bloginfo('charset'); ?>">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>⚠️ Not Built for Mobile</title>
+    <?php wp_site_icon(); ?>
     <style>
         html, body {
             margin: 0;

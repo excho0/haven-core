@@ -54,6 +54,7 @@
 <html <?= $locale_attributes; ?> style="overflow: hidden; overscroll-behavior: none;">
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <?php wp_site_icon(); ?>
 
         <style>
 
