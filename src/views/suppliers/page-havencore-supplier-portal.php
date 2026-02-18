@@ -1935,15 +1935,32 @@
                             return {
                                 label: this.i18n.shipping_address,
                                 value: '',
+                                table_values_map: {},
                                 isFallback: false
                             };
                         }
 
                         const preferred = hasShipping ? shipping : billing;
+                        const street = [preferred.address_1, preferred.address_2]
+                            .map(part => (part ?? '').toString().trim())
+                            .filter(Boolean)
+                            .join(', ');
+                        const cityState = [preferred.city, preferred.state_name || preferred.state]
+                            .map(part => (part ?? '').toString().trim())
+                            .filter(Boolean)
+                            .join(', ');
+                        const postcode = (preferred.postcode ?? '').toString().trim();
+                        const country = (preferred.country_name || preferred.country || '').toString().trim();
 
                         return {
                             label: hasShipping ? this.i18n.shipping_address : (this.i18n.billing_address || 'Billing Address'),
                             value: this.formatAddressString(preferred),
+                            table_values_map: {
+                                street: street,
+                                city_state: cityState,
+                                postcode: postcode,
+                                country: country
+                            },
                             isFallback: !hasShipping && hasBilling
                         };
                     },
@@ -1991,14 +2008,24 @@
                         const email = this.resolveCustomerEmail(order);
                         const phone = this.resolveCustomerPhone(order);
                         const address = this.resolveCustomerAddress(order);
+                        const SHIPPING_ADDRESS_TABLE_COLUMNS = [
+                            { key: 'country', header: this.i18n.country || 'Country' },
+                            { key: 'city_state', header: this.i18n.city_label || 'City / State' },
+                            { key: 'street', header: this.i18n.street_address_label || 'Street' },
+                            { key: 'postcode', header: this.i18n.zip_label || 'Postcode' }
+                        ];
+                        const shippingTableSource = address.table_values_map || {};
+                        const shippingAddressHeaders = SHIPPING_ADDRESS_TABLE_COLUMNS.map(col => col.header);
+                        const shippingAddressParts = SHIPPING_ADDRESS_TABLE_COLUMNS.map(col =>
+                            (shippingTableSource[col.key] ?? '').toString().trim()
+                        );
 
                         const lines = [
                             { label: this.i18n.order, value: orderId, icon: 'pi pi-shopping-cart' },
                             { label: this.i18n.name, value: name, icon: 'pi pi-id-card' },
                             { label: this.i18n.company, value: company, icon: 'pi pi-building' },
                             { label: this.i18n.email, value: email, icon: 'pi pi-envelope' },
-                            { label: this.i18n.phone, value: phone, icon: 'pi pi-phone' },
-                            { label: this.i18n.shipping_address, value: address.value, icon: 'pi pi-map-marker' }
+                            { label: this.i18n.phone, value: phone, icon: 'pi pi-phone' }
                         ];
 
                         const printContainerId = 'hc-print-label';
@@ -2094,6 +2121,15 @@
                                     font-size: 0.98rem;
                                     padding: 0 12px;
                                 }
+                                #${printContainerId} .customer-info-row--stack {
+                                    flex-direction: column;
+                                    gap: 8px;
+                                }
+                                #${printContainerId} .customer-info-row--stack .customer-info-label {
+                                    width: 100%;
+                                    flex: none;
+
+                                }
                                 #${printContainerId} .customer-info-row:first-of-type {
                                     margin-top: 4px;
                                 }
@@ -2107,10 +2143,10 @@
                                 }
                                 #${printContainerId} .customer-info-label {
                                     flex: 0 0 24%;
-                                    font-weight: 600;
+                                    font-weight: 800;
                                     text-transform: uppercase;
-                                    font-size: 0.62rem;
-                                    color: #475569;
+                                    font-size: 0.66rem;
+                                    color: #1e293b;
                                     letter-spacing: 0.12em;
                                     display: inline-flex;
                                     align-items: center;
@@ -2129,6 +2165,41 @@
                                     line-height: 1.4;
                                     word-break: break-word;
                                 }
+                                #${printContainerId} .customer-info-value-table {
+                                    width: 100%;
+                                    border-collapse: collapse;
+                                    border: 1px solid #94a3b8;
+                                    border-radius: 4px;
+                                    overflow: hidden;
+                                    margin-left: 0;
+                                    box-sizing: border-box;
+                                    max-width: 100%;
+                                    table-layout: fixed;
+                                }
+                                #${printContainerId} .customer-info-value-table thead {
+                                    border-bottom: 2px solid #64748b;
+                                }
+                                #${printContainerId} .customer-info-value-table th {
+                                    background: #f8fafc;
+                                    color: #0f172a;
+                                    font-size: 0.62rem;
+                                    text-transform: uppercase;
+                                    letter-spacing: 0.08em;
+                                    font-weight: 800;
+                                    padding: 4px 6px;
+                                    border: 1px solid #94a3b8;
+                                    text-align: left;
+                                }
+                                #${printContainerId} .customer-info-value-table td {
+                                    padding: 5px 6px;
+                                    font-size: 0.78rem;
+                                    font-weight: 700;
+                                    border: 1px solid #94a3b8;
+                                    line-height: 1.3;
+                                    word-break: break-word;
+                                    background: #ffffff;
+                                    text-align: left;
+                                }
                                 #${printContainerId} .customer-info-footer {
                                     position: absolute;
                                     left: 0;
@@ -2139,7 +2210,7 @@
                                     align-items: center;
                                     justify-content: space-between;
                                     gap: 12px;
-                                    border-top: 0.5pt solid #e2e8f0;
+                                    border-top: 1.5pt solid #0f172a;
                                 }
                                 #${printContainerId} .customer-info-footer-text {
                                     font-size: 0.7rem;
@@ -2170,6 +2241,9 @@
                                     orderReference,
                                     logoUrl,
                                     lines: visibleLines,
+                                    shippingAddressLabel: address.label || thisParent.i18n.shipping_address,
+                                    shippingAddressParts,
+                                    shippingAddressHeaders,
                                     footerEnabled,
                                     qrEnabled,
                                     qrAvailable,
@@ -2202,6 +2276,27 @@
                                         </div>
                                         <div v-if="index < lines.length - 1" class="customer-info-separator"></div>
                                     </template>
+
+                                    <div v-if="shippingAddressParts.length" class="customer-info-separator"></div>
+
+                                    <div v-if="shippingAddressParts.some(part => (part || '').toString().trim() !== '')" class="customer-info-row customer-info-row--stack">
+                                        <span class="customer-info-label">
+                                            <i class="pi pi-map-marker customer-info-icon"></i>
+                                            {{ shippingAddressLabel }}:
+                                        </span>
+                                        <table class="customer-info-value-table">
+                                            <thead>
+                                                <tr>
+                                                    <th v-for="(head, headIndex) in shippingAddressHeaders" :key="'head-' + headIndex">{{ head }}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td v-for="(part, partIndex) in shippingAddressParts" :key="'addr-' + partIndex">{{ part }}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
 
                                     <div v-if="footerEnabled" class="customer-info-footer">
                                         <div class="customer-info-footer-text">
