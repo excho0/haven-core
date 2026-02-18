@@ -992,6 +992,31 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		$this->log_paypal_tracking_message( $message, 'warning' );
 	}
 
+	private function get_country_label( string $country_code ): string {
+		$country_code = strtoupper( trim( $country_code ) );
+		if ( $country_code === '' ) {
+			return '';
+		}
+
+		$countries = function_exists( 'WC' ) && WC()->countries ? WC()->countries->get_countries() : [];
+		return isset( $countries[ $country_code ] ) ? (string) $countries[ $country_code ] : $country_code;
+	}
+
+	private function get_state_label( string $country_code, string $state_code ): string {
+		$state_code = trim( $state_code );
+		if ( $state_code === '' ) {
+			return '';
+		}
+
+		$country_code = strtoupper( trim( $country_code ) );
+		$states = function_exists( 'WC' ) && WC()->countries ? WC()->countries->get_states( $country_code ) : [];
+		if ( is_array( $states ) && isset( $states[ $state_code ] ) ) {
+			return (string) $states[ $state_code ];
+		}
+
+		return $state_code;
+	}
+
 	public function get_assigned_orders( WP_REST_Request $request ) {
 		if ( ! is_user_logged_in() || ! wc_current_user_has_role( 'supplier' ) ) {
 			return new WP_Error( 'unauthorized', 'Unauthorized', [ 'status' => 403 ] );
@@ -1040,6 +1065,8 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				$parts[] = (string) $order->get_billing_state();
 				$parts[] = (string) $order->get_billing_postcode();
 				$parts[] = (string) $order->get_billing_country();
+				$parts[] = $this->get_country_label( (string) $order->get_billing_country() );
+				$parts[] = $this->get_state_label( (string) $order->get_billing_country(), (string) $order->get_billing_state() );
 				$parts[] = (string) $order->get_shipping_first_name();
 				$parts[] = (string) $order->get_shipping_last_name();
 				$parts[] = (string) $order->get_shipping_address_1();
@@ -1048,6 +1075,8 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				$parts[] = (string) $order->get_shipping_state();
 				$parts[] = (string) $order->get_shipping_postcode();
 				$parts[] = (string) $order->get_shipping_country();
+				$parts[] = $this->get_country_label( (string) $order->get_shipping_country() );
+				$parts[] = $this->get_state_label( (string) $order->get_shipping_country(), (string) $order->get_shipping_state() );
 
 				// Supplier-specific products: ungrouped
 				foreach ( (array) ( $data[ $supplier_id ]['ungrouped_products'] ?? [] ) as $entry ) {
@@ -1315,6 +1344,11 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 
 			$shipping_email = $order->get_meta('_shipping_email', true);
 
+			$billing_country_code  = (string) $order->get_billing_country();
+			$shipping_country_code = (string) $order->get_shipping_country();
+			$billing_state_code    = (string) $order->get_billing_state();
+			$shipping_state_code   = (string) $order->get_shipping_state();
+
 			$orders_data[] = [
 				'id' => $order_id,
 				'date_created' => $order->get_date_created() ? $order->get_date_created()->date( 'Y-m-d H:i' ) : '',
@@ -1339,8 +1373,10 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 					'address_2' => $order->get_billing_address_2(),
 					'city' => $order->get_billing_city(),
 					'postcode' => $order->get_billing_postcode(),
-					'state' => $order->get_billing_state(),
-					'country' => $order->get_billing_country(),
+					'state' => $billing_state_code,
+					'state_name' => $this->get_state_label( $billing_country_code, $billing_state_code ),
+					'country' => $billing_country_code,
+					'country_name' => $this->get_country_label( $billing_country_code ),
 					'shipping_first_name' => $order->get_shipping_first_name(),
 					'shipping_last_name' => $order->get_shipping_last_name(),
 					'shipping_company' => $order->get_shipping_company(),
@@ -1348,8 +1384,10 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 					'shipping_address_2' => $order->get_shipping_address_2(),
 					'shipping_city' => $order->get_shipping_city(),
 					'shipping_postcode' => $order->get_shipping_postcode(),
-					'shipping_state' => $order->get_shipping_state(),
-					'shipping_country' => $order->get_shipping_country(),
+					'shipping_state' => $shipping_state_code,
+					'shipping_state_name' => $this->get_state_label( $shipping_country_code, $shipping_state_code ),
+					'shipping_country' => $shipping_country_code,
+					'shipping_country_name' => $this->get_country_label( $shipping_country_code ),
 					'shipping_phone' => $shipping_phone,
 					'shipping_email' => $shipping_email,
 				]

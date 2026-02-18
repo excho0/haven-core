@@ -1886,7 +1886,7 @@
                         }
 
                         const localityPieces = [];
-                        const cityState = [address.city, address.state]
+                        const cityState = [address.city, address.state_name || address.state]
                             .map(part => (part ?? '').toString().trim())
                             .filter(Boolean)
                             .join(', ');
@@ -1900,8 +1900,8 @@
                             parts.push(localityPieces.join(' '));
                         }
 
-                        if (address.country) {
-                            parts.push(String(address.country).trim());
+                        if (address.country_name || address.country) {
+                            parts.push(((address.country_name || address.country) ?? '').toString().trim());
                         }
 
                         return parts.filter(Boolean).join(', ');
@@ -1913,16 +1913,20 @@
                             address_2: customer.shipping_address_2,
                             city: customer.shipping_city,
                             state: customer.shipping_state,
+                            state_name: customer.shipping_state_name,
                             postcode: customer.shipping_postcode,
-                            country: customer.shipping_country
+                            country: customer.shipping_country,
+                            country_name: customer.shipping_country_name
                         };
                         const billing = {
                             address_1: customer.address_1,
                             address_2: customer.address_2,
                             city: customer.city,
                             state: customer.state,
+                            state_name: customer.state_name,
                             postcode: customer.postcode,
-                            country: customer.country
+                            country: customer.country,
+                            country_name: customer.country_name
                         };
 
                         const hasShipping = this.addressHasData(shipping);
