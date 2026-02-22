@@ -49,6 +49,12 @@ class Products
         add_action('admin_footer', [self::class, 'print_ajax_script']);
         add_action('admin_head', [self::class, 'add_admin_column_styles']);
         add_action('wp_ajax_save_supplier_from_table', [self::class, 'handle_ajax_supplier_save']);
+
+        // Product info sheet (A4 HTML preview for admins)
+        add_action('post_submitbox_misc_actions', [self::class, 'render_product_sheet_button']);
+        add_action('admin_post_hc_product_info_sheet', [self::class, 'render_product_sheet_page']);
+        add_action('admin_post_hc_product_info_sheet_master', [self::class, 'render_product_sheet_master_page']);
+        add_action('admin_footer', [self::class, 'inject_master_sheet_button_script']);
     }
 
     /**
@@ -360,5 +366,431 @@ class Products
                 }
             </style>
         ';
+    }
+
+    /**
+     * Render "View Product Sheet" button in product edit sidebar.
+     *
+     * @return void
+     */
+    public static function render_product_sheet_button(): void
+    {
+        global $post;
+        if (!$post || $post->post_type !== 'product') {
+            return;
+        }
+        if (!current_user_can('edit_product', $post->ID)) {
+            return;
+        }
+
+        $url = wp_nonce_url(
+            admin_url('admin-post.php?action=hc_product_info_sheet&product_id=' . absint($post->ID) . '&autoprint=1'),
+            'hc_product_info_sheet_' . absint($post->ID)
+        );
+
+        echo '<div class="misc-pub-section">';
+        echo '<a class="button button-secondary" target="_blank" href="' . esc_url($url) . '">';
+        echo esc_html__('View Product Info Sheet', 'woocommerce');
+        echo '</a>';
+        echo '</div>';
+    }
+
+    /**
+     * Render standalone A4 product info sheet.
+     *
+     * @return void
+     */
+    public static function render_product_sheet_page(): void
+    {
+        $product_id = isset($_GET['product_id']) ? absint($_GET['product_id']) : 0;
+        if (!$product_id) {
+            wp_die(esc_html__('Missing product ID.', 'woocommerce'));
+        }
+        if (!current_user_can('edit_product', $product_id)) {
+            wp_die(esc_html__('You are not allowed to view this page.', 'woocommerce'));
+        }
+        check_admin_referer('hc_product_info_sheet_' . $product_id);
+
+        $product = wc_get_product($product_id);
+        if (!$product) {
+            wp_die(esc_html__('Product not found.', 'woocommerce'));
+        }
+
+        $template_data = self::prepare_product_sheet_template_data($product);
+        $template_data['auto_print'] = isset($_GET['autoprint']) && $_GET['autoprint'] === '1';
+
+        nocache_headers();
+        $template_path = HAVEN_CORE_PATH . 'views/admin/product-info-sheet-a4.php';
+        if (!is_readable($template_path)) {
+            wp_die(esc_html__('Product sheet template missing.', 'woocommerce'));
+        }
+
+        extract($template_data, EXTR_OVERWRITE);
+        include $template_path;
+        exit;
+    }
+
+    /**
+     * Inject "Export Info Sheets" button next to WooCommerce Export on products list.
+     *
+     * @return void
+     */
+    public static function inject_master_sheet_button_script(): void
+    {
+        global $pagenow;
+        if ($pagenow !== 'edit.php' || ($_GET['post_type'] ?? '') !== 'product') {
+            return;
+        }
+        if (!current_user_can('edit_products')) {
+            return;
+        }
+
+        $args = ['action' => 'hc_product_info_sheet_master'];
+        foreach (['s', 'product_cat', 'product_type', 'stock_status'] as $key) {
+            if (isset($_GET[$key]) && $_GET[$key] !== '') {
+                $args[$key] = sanitize_text_field((string) $_GET[$key]);
+            }
+        }
+        $args['_wpnonce'] = wp_create_nonce('hc_product_info_sheet_master');
+        $url = add_query_arg($args, admin_url('admin-post.php'));
+        ?>
+        <script>
+            (function() {
+                const headingActions = document.querySelectorAll('.wrap .page-title-action');
+                if (!headingActions.length) return;
+                if (document.getElementById('hc-export-info-sheets')) return;
+
+                const btn = document.createElement('a');
+                btn.id = 'hc-export-info-sheets';
+                btn.className = 'page-title-action';
+                btn.href = <?php echo wp_json_encode($url); ?>;
+                btn.target = '_blank';
+                btn.textContent = 'Export Info Sheets';
+
+                const exportBtn = Array.from(headingActions).find(a => (a.textContent || '').trim().toLowerCase() === 'export');
+                if (exportBtn && exportBtn.parentNode) {
+                    exportBtn.insertAdjacentElement('afterend', btn);
+                } else {
+                    headingActions[headingActions.length - 1].insertAdjacentElement('afterend', btn);
+                }
+            })();
+        </script>
+        <?php
+    }
+
+    /**
+     * Render all filtered products as a multi-page print-ready booklet.
+     * Users can Save as PDF from browser print dialog.
+     *
+     * @return void
+     */
+    public static function render_product_sheet_master_page(): void
+    {
+        if (!current_user_can('edit_products')) {
+            wp_die(esc_html__('You are not allowed to view this page.', 'woocommerce'));
+        }
+        check_admin_referer('hc_product_info_sheet_master');
+
+        $product_ids = self::resolve_master_export_product_ids();
+        if (empty($product_ids)) {
+            wp_die(esc_html__('No products matched your current filters.', 'woocommerce'));
+        }
+
+        $template_path = HAVEN_CORE_PATH . 'views/admin/product-info-sheet-a4.php';
+        if (!is_readable($template_path)) {
+            wp_die(esc_html__('Product sheet template missing.', 'woocommerce'));
+        }
+
+        $css = self::extract_template_css($template_path);
+
+        $articles = [];
+        foreach ($product_ids as $product_id) {
+            $product = wc_get_product((int) $product_id);
+            if (!$product) {
+                continue;
+            }
+            $article_html = self::render_product_sheet_article_html($product, $template_path);
+            if ($article_html !== '') {
+                $articles[] = $article_html;
+            }
+        }
+
+        if (empty($articles)) {
+            wp_die(esc_html__('Unable to render product sheets.', 'woocommerce'));
+        }
+
+        nocache_headers();
+        ?>
+        <!doctype html>
+        <html <?php language_attributes(); ?>>
+        <head>
+            <meta charset="<?php bloginfo('charset'); ?>">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title><?php esc_html_e('Product Info Sheets Export', 'woocommerce'); ?></title>
+            <style>
+                <?php echo $css; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                .sheet-page-break { page-break-after: always; break-after: page; }
+                .sheet-page-break:last-child { page-break-after: auto; break-after: auto; }
+            </style>
+        </head>
+        <body>
+            <?php foreach ($articles as $index => $article_html) : ?>
+                <div class="sheet-page-break">
+                    <?php echo $article_html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                </div>
+            <?php endforeach; ?>
+            <script>
+                window.addEventListener('load', () => setTimeout(() => window.print(), 180));
+            </script>
+        </body>
+        </html>
+        <?php
+        exit;
+    }
+
+    /**
+     * Extract the template CSS block.
+     *
+     * @param string $template_path
+     * @return string
+     */
+    private static function extract_template_css(string $template_path): string
+    {
+        $template_raw = (string) file_get_contents($template_path);
+        preg_match('/<style>(.*?)<\/style>/s', $template_raw, $style_matches);
+        return $style_matches[1] ?? '';
+    }
+
+    /**
+     * Render a single product sheet article HTML from template.
+     *
+     * @param \WC_Product $product
+     * @param string $template_path
+     * @return string
+     */
+    private static function render_product_sheet_article_html(\WC_Product $product, string $template_path): string
+    {
+        $template_data = self::prepare_product_sheet_template_data($product);
+        extract($template_data, EXTR_OVERWRITE);
+
+        ob_start();
+        include $template_path;
+        $full_html = (string) ob_get_clean();
+        preg_match('/<article class="sheet">.*<\/article>/sU', $full_html, $article_match);
+        return $article_match[0] ?? '';
+    }
+
+    /**
+     * Build template data payload for a product info sheet.
+     *
+     * @param \WC_Product $product
+     * @return array<string,mixed>
+     */
+    private static function prepare_product_sheet_template_data(\WC_Product $product): array
+    {
+        $product_id = (int) $product->get_id();
+        $store_name = get_bloginfo('name');
+        $store_url = home_url('/');
+        $store_email = get_option('admin_email');
+        $store_phone = get_option('woocommerce_store_phone', '');
+        $store_address_1 = get_option('woocommerce_store_address', '');
+        $store_address_2 = get_option('woocommerce_store_address_2', '');
+        $store_city = get_option('woocommerce_store_city', '');
+        $store_postcode = get_option('woocommerce_store_postcode', '');
+        $store_country_state = get_option('woocommerce_default_country', '');
+
+        $store_country = '';
+        $store_state = '';
+        if (strpos($store_country_state, ':') !== false) {
+            [$store_country, $store_state] = explode(':', $store_country_state, 2);
+        } else {
+            $store_country = $store_country_state;
+        }
+
+        $countries = function_exists('WC') && WC()->countries ? WC()->countries->get_countries() : [];
+        $states = function_exists('WC') && WC()->countries ? WC()->countries->get_states($store_country) : [];
+        $store_country_label = $countries[$store_country] ?? $store_country;
+        $store_state_label = $states[$store_state] ?? $store_state;
+
+        $logo_url = '';
+        $custom_logo_id = (int) get_theme_mod('custom_logo');
+        if ($custom_logo_id) {
+            $logo_url = wp_get_attachment_image_url($custom_logo_id, 'full') ?: '';
+        }
+
+        $gallery_ids = $product->get_gallery_image_ids();
+        $image_ids = [];
+        if ($product->get_image_id()) {
+            $image_ids[] = (int) $product->get_image_id();
+        }
+        foreach ((array) $gallery_ids as $gid) {
+            $gid = (int) $gid;
+            if ($gid) {
+                $image_ids[] = $gid;
+            }
+        }
+        $image_ids = array_values(array_unique($image_ids));
+        $image_urls = array_values(array_filter(array_map(static fn($id) => wp_get_attachment_image_url($id, 'large'), $image_ids)));
+
+        $attributes = [];
+        foreach ($product->get_attributes() as $attribute) {
+            if (!is_a($attribute, \WC_Product_Attribute::class)) {
+                continue;
+            }
+            $label = wc_attribute_label($attribute->get_name(), $product);
+            $value = wc_implode_text_attributes($attribute->get_options());
+            if ($attribute->is_taxonomy()) {
+                $terms = wc_get_product_terms($product_id, $attribute->get_name(), ['fields' => 'names']);
+                if (!is_wp_error($terms) && !empty($terms)) {
+                    $value = implode(', ', $terms);
+                }
+            }
+            $value = trim((string) $value);
+            if ($value !== '') {
+                $attributes[] = ['label' => $label, 'value' => $value];
+            }
+        }
+
+        return [
+            'product' => $product,
+            'store_name' => $store_name,
+            'store_url' => $store_url,
+            'store_email' => $store_email,
+            'store_phone' => $store_phone,
+            'store_address_1' => $store_address_1,
+            'store_address_2' => $store_address_2,
+            'store_city' => $store_city,
+            'store_postcode' => $store_postcode,
+            'store_country_label' => $store_country_label,
+            'store_state_label' => $store_state_label,
+            'logo_url' => $logo_url,
+            'image_urls' => $image_urls,
+            'attributes' => $attributes,
+            'product_tabs' => self::collect_product_tabs($product),
+            'price_html' => wp_strip_all_tags((string) $product->get_price_html()),
+            'description' => apply_filters('the_content', (string) $product->get_description()),
+            'short_description' => apply_filters('woocommerce_short_description', (string) $product->get_short_description()),
+        ];
+    }
+
+    /**
+     * Resolve product IDs for master export based on current list filters.
+     *
+     * @return int[]
+     */
+    private static function resolve_master_export_product_ids(): array
+    {
+        $args = [
+            'post_type' => 'product',
+            'post_status' => ['publish', 'private', 'draft', 'pending'],
+            'fields' => 'ids',
+            'posts_per_page' => 200,
+            'no_found_rows' => true,
+        ];
+
+        $search = isset($_GET['s']) ? sanitize_text_field((string) $_GET['s']) : '';
+        if ($search !== '') {
+            $args['s'] = $search;
+        }
+
+        $product_cat = isset($_GET['product_cat']) ? sanitize_text_field((string) $_GET['product_cat']) : '';
+        if ($product_cat !== '' && $product_cat !== '0') {
+            if (ctype_digit($product_cat)) {
+                $args['tax_query'][] = [
+                    'taxonomy' => 'product_cat',
+                    'field' => 'term_id',
+                    'terms' => [(int) $product_cat],
+                ];
+            } else {
+                $args['tax_query'][] = [
+                    'taxonomy' => 'product_cat',
+                    'field' => 'slug',
+                    'terms' => [$product_cat],
+                ];
+            }
+        }
+
+        $product_type = isset($_GET['product_type']) ? sanitize_text_field((string) $_GET['product_type']) : '';
+        if ($product_type !== '' && $product_type !== 'all') {
+            $args['tax_query'][] = [
+                'taxonomy' => 'product_type',
+                'field' => 'slug',
+                'terms' => [$product_type],
+            ];
+        }
+
+        $stock_status = isset($_GET['stock_status']) ? sanitize_text_field((string) $_GET['stock_status']) : '';
+        if ($stock_status !== '' && $stock_status !== 'all') {
+            $args['meta_query'][] = [
+                'key' => '_stock_status',
+                'value' => $stock_status,
+            ];
+        }
+
+        if (!empty($args['tax_query']) && count($args['tax_query']) > 1) {
+            $args['tax_query']['relation'] = 'AND';
+        }
+        if (!empty($args['meta_query']) && count($args['meta_query']) > 1) {
+            $args['meta_query']['relation'] = 'AND';
+        }
+
+        $query = new \WP_Query($args);
+        return array_values(array_map('intval', (array) $query->posts));
+    }
+
+    /**
+     * Collect rendered product tabs content including custom tabs.
+     *
+     * @param \WC_Product $product
+     * @return array<int, array{title:string,content:string}>
+     */
+    private static function collect_product_tabs(\WC_Product $product): array
+    {
+        $post = get_post($product->get_id());
+        if (!$post) {
+            return [];
+        }
+
+        $prev_product = $GLOBALS['product'] ?? null;
+        $prev_post = $GLOBALS['post'] ?? null;
+
+        $GLOBALS['product'] = $product;
+        $GLOBALS['post'] = $post;
+
+        $tabs = apply_filters('woocommerce_product_tabs', []);
+        if (!is_array($tabs) || empty($tabs)) {
+            $GLOBALS['product'] = $prev_product;
+            $GLOBALS['post'] = $prev_post;
+            return [];
+        }
+
+        uasort($tabs, static fn($a, $b) => (int)($a['priority'] ?? 0) <=> (int)($b['priority'] ?? 0));
+
+        $rendered = [];
+        foreach ($tabs as $key => $tab) {
+            $title = trim((string) ($tab['title'] ?? ''));
+            $callback = $tab['callback'] ?? null;
+            if ($title === '' || !is_callable($callback)) {
+                continue;
+            }
+            ob_start();
+            try {
+                call_user_func($callback, $key, $tab);
+            } catch (\Throwable $e) {
+                // Keep going if a custom tab callback fails.
+            }
+            $content = trim((string) ob_get_clean());
+            if ($content !== '') {
+                $rendered[] = [
+                    'title' => wp_strip_all_tags($title),
+                    'content' => $content,
+                ];
+            }
+        }
+
+        $GLOBALS['product'] = $prev_product;
+        $GLOBALS['post'] = $prev_post;
+
+        return $rendered;
     }
 }
