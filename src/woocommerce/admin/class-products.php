@@ -632,8 +632,6 @@ class Products
         if ($overview === '') {
             $overview = wp_strip_all_tags((string) __('No description available.', 'woocommerce'));
         }
-        $overview = wp_trim_words($overview, 12, '...');
-
         $sections = [[
             'title' => (string) __('Overview', 'woocommerce'),
             'body' => $overview,
@@ -647,7 +645,7 @@ class Products
             }
             $sections[] = [
                 'title' => $title,
-                'body' => wp_trim_words($body, 10, '...'),
+                'body' => $body,
             ];
         }
 
