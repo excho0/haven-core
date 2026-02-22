@@ -42,6 +42,8 @@ class Products
         add_filter('manage_edit-product_columns', [self::class, 'add_supplier_price_column'], 21);
         add_action('manage_product_posts_custom_column', [self::class, 'render_supplier_column'], 10, 2);
         add_action('manage_product_posts_custom_column', [self::class, 'render_supplier_price_column'], 11, 2);
+        add_action('manage_product_posts_custom_column', [self::class, 'render_price_column'], 12, 2);
+        add_filter('woocommerce_get_price_html', [self::class, 'filter_admin_product_list_price_html'], 10, 2);
         add_filter('manage_edit-product_sortable_columns', [self::class, 'make_supplier_price_sortable']);
         add_action('pre_get_posts', [self::class, 'handle_supplier_price_sorting']);
 
@@ -239,8 +241,165 @@ class Products
     {
         if ($column !== 'supplier_price') return;
 
-        $supplier_price = get_post_meta($post_id, '_supplier_price', true);
-        echo $supplier_price ? wc_price($supplier_price) : '–';
+        $product = wc_get_product($post_id);
+        if (!$product) {
+            echo '–';
+            return;
+        }
+
+        if (!$product->is_type('variable')) {
+            $supplier_price = get_post_meta($post_id, '_supplier_price', true);
+            echo $supplier_price ? wc_price($supplier_price) : '–';
+            return;
+        }
+
+        $rows = self::build_variable_price_rows(
+            $product,
+            static function (\WC_Product $variation): string {
+                $variation_supplier_price = get_post_meta((int) $variation->get_id(), '_supplier_price', true);
+                if ($variation_supplier_price === '' || $variation_supplier_price === null) {
+                    return '';
+                }
+                return wc_price($variation_supplier_price);
+            }
+        );
+
+        if (empty($rows)) {
+            echo '–';
+            return;
+        }
+
+        echo implode('', $rows); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+    }
+
+    /**
+     * Display variable product prices in a line-by-line variation layout.
+     *
+     * @param string $column Column name.
+     * @param int $post_id   Product ID.
+     * @return void
+     */
+    public static function render_price_column(string $column, int $post_id): void
+    {
+        if ($column !== 'price') return;
+
+        $product = wc_get_product($post_id);
+        if (!$product || !$product->is_type('variable')) {
+            return;
+        }
+
+        $rows = self::build_variable_price_rows(
+            $product,
+            static function (\WC_Product $variation): string {
+                return self::format_admin_variation_price_html($variation);
+            }
+        );
+
+        if (empty($rows)) {
+            return;
+        }
+
+        echo '<div class="hc-price-column-rows">' . implode('', $rows) . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+    }
+
+    /**
+     * Remove default WooCommerce variable price HTML on products list so custom rows can render alone.
+     *
+     * @param string $price_html
+     * @param \WC_Product $product
+     * @return string
+     */
+    public static function filter_admin_product_list_price_html(string $price_html, \WC_Product $product): string
+    {
+        if (!is_admin()) {
+            return $price_html;
+        }
+
+        global $pagenow;
+        if ($pagenow !== 'edit.php' || (($_GET['post_type'] ?? '') !== 'product')) {
+            return $price_html;
+        }
+
+        if ($product->is_type('variable')) {
+            return '<span class="hc-price-placeholder" aria-hidden="true"></span>';
+        }
+
+        return $price_html;
+    }
+
+    /**
+     * Build reusable variation rows for admin price-like columns.
+     *
+     * @param \WC_Product $product
+     * @param callable(\WC_Product):string $value_resolver
+     * @return string[]
+     */
+    private static function build_variable_price_rows(\WC_Product $product, callable $value_resolver): array
+    {
+        $rows = [];
+        foreach ($product->get_children() as $variation_id) {
+            $variation = wc_get_product((int) $variation_id);
+            if (!$variation || !$variation->is_type('variation')) {
+                continue;
+            }
+
+            $parts = [];
+            foreach ($variation->get_attributes() as $attribute_name => $attribute_value) {
+                $attribute_slug = str_replace('attribute_', '', (string) $attribute_name);
+                $attribute_label = wc_attribute_label($attribute_slug, $product);
+                $attribute_text = (string) $attribute_value;
+
+                if (taxonomy_exists($attribute_slug)) {
+                    $term = get_term_by('slug', (string) $attribute_value, $attribute_slug);
+                    if ($term && !is_wp_error($term)) {
+                        $attribute_text = (string) $term->name;
+                    }
+                }
+
+                if ($attribute_text !== '') {
+                    $parts[] = $attribute_label . ': ' . $attribute_text;
+                }
+            }
+
+            $variation_label = !empty($parts) ? implode(' | ', $parts) : ('#' . (int) $variation->get_id());
+            $value_html = (string) call_user_func($value_resolver, $variation);
+            if ($value_html === '') {
+                continue;
+            }
+
+            $rows[] = '<div class="hc-supplier-price-row"><span class="hc-supplier-price-attr">' . esc_html($variation_label) . '</span><br><span class="hc-supplier-price-value">' . $value_html . '</span></div>';
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Format variation price for admin list: show regular + sale when on sale.
+     *
+     * @param \WC_Product $variation
+     * @return string
+     */
+    private static function format_admin_variation_price_html(\WC_Product $variation): string
+    {
+        $active_price = $variation->get_price();
+        if ($active_price === '' || $active_price === null) {
+            return '';
+        }
+
+        $regular_price = $variation->get_regular_price();
+        $sale_price = $variation->get_sale_price();
+
+        if (
+            $sale_price !== '' &&
+            $sale_price !== null &&
+            $regular_price !== '' &&
+            $regular_price !== null &&
+            (float) $sale_price < (float) $regular_price
+        ) {
+            return '<span class="hc-price-old">' . wc_price((float) $regular_price) . '</span> <span class="hc-price-sale">' . wc_price((float) $sale_price) . '</span>';
+        }
+
+        return wc_price((float) $active_price);
     }
 
     /**
@@ -352,9 +511,14 @@ class Products
 
         echo '
             <style>
-                th.column-supplier, td.column-supplier,
-                th.column-supplier_price, td.column-supplier_price {
+                th.column-supplier, td.column-supplier {
                     width: 160px;
+                    vertical-align: top;
+                }
+                th.column-price, td.column-price,
+                th.column-supplier_price, td.column-supplier_price {
+                    width: 240px;
+                    min-width: 240px;
                     vertical-align: top;
                 }
                 td.column-supplier select {
@@ -367,6 +531,44 @@ class Products
                     display: inline-block;
                     text-align: center;
                     width: 100%;
+                }
+                .hc-supplier-price-row {
+                    margin-bottom: 6px;
+                    padding-bottom: 6px;
+                    border-bottom: 1px solid #e5e7eb;
+                    line-height: 1.35;
+                }
+                .hc-supplier-price-row:last-child {
+                    margin-bottom: 0;
+                    padding-bottom: 0;
+                    border-bottom: 0;
+                }
+                td.column-price .na {
+                    display: none;
+                }
+                td.column-price .hc-price-placeholder {
+                    display: none;
+                }
+                .hc-supplier-price-attr {
+                    display: inline-block;
+                    color: #4b5563;
+                    font-size: 11px;
+                    word-break: break-word;
+                }
+                .hc-supplier-price-value {
+                    display: inline-block;
+                    margin-top: 2px;
+                    font-weight: 600;
+                }
+                .hc-price-old {
+                    text-decoration: line-through;
+                    color: #6b7280;
+                    margin-right: 4px;
+                    font-weight: 500;
+                }
+                .hc-price-sale {
+                    color: #111827;
+                    font-weight: 700;
                 }
             </style>
         ';
