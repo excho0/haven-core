@@ -18,6 +18,10 @@ if (!defined('ABSPATH')) {
  */
 class Products
 {
+    private const MASTER_SHEET_LAYOUT_FULL = 'full';
+    private const MASTER_SHEET_LAYOUT_GRID = 'grid';
+    private const MASTER_SHEET_DEFAULT_LAYOUT = self::MASTER_SHEET_LAYOUT_GRID;
+
     /**
      * Registers all admin hooks related to suppliers and custom fields.
      *
@@ -445,7 +449,10 @@ class Products
             return;
         }
 
-        $args = ['action' => 'hc_product_info_sheet_master'];
+        $args = [
+            'action' => 'hc_product_info_sheet_master',
+            'layout' => self::get_master_sheet_default_layout(),
+        ];
         foreach (['s', 'product_cat', 'product_type', 'stock_status'] as $key) {
             if (isset($_GET[$key]) && $_GET[$key] !== '') {
                 $args[$key] = sanitize_text_field((string) $_GET[$key]);
@@ -496,6 +503,23 @@ class Products
             wp_die(esc_html__('No products matched your current filters.', 'woocommerce'));
         }
 
+        $layout_mode = self::resolve_master_sheet_layout();
+        if ($layout_mode === self::MASTER_SHEET_LAYOUT_GRID) {
+            self::render_product_sheet_master_grid_page($product_ids);
+        } else {
+            self::render_product_sheet_master_full_page($product_ids);
+        }
+        exit;
+    }
+
+    /**
+     * Render full-sheet mode (one product per page).
+     *
+     * @param int[] $product_ids
+     * @return void
+     */
+    private static function render_product_sheet_master_full_page(array $product_ids): void
+    {
         $template_path = HAVEN_CORE_PATH . 'views/admin/product-info-sheet-a4.php';
         if (!is_readable($template_path)) {
             wp_die(esc_html__('Product sheet template missing.', 'woocommerce'));
@@ -534,7 +558,7 @@ class Products
             </style>
         </head>
         <body>
-            <?php foreach ($articles as $index => $article_html) : ?>
+            <?php foreach ($articles as $article_html) : ?>
                 <div class="sheet-page-break">
                     <?php echo $article_html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                 </div>
@@ -545,7 +569,148 @@ class Products
         </body>
         </html>
         <?php
-        exit;
+    }
+
+    /**
+     * Render grid mode (compact cards, many products per printed page).
+     *
+     * @param int[] $product_ids
+     * @return void
+     */
+    private static function render_product_sheet_master_grid_page(array $product_ids): void
+    {
+        $cards = [];
+        foreach ($product_ids as $product_id) {
+            $product = wc_get_product((int) $product_id);
+            if (!$product) {
+                continue;
+            }
+            $cards[] = self::render_product_sheet_grid_card_html($product);
+        }
+
+        if (empty($cards)) {
+            wp_die(esc_html__('Unable to render product sheets.', 'woocommerce'));
+        }
+
+        $template_path = HAVEN_CORE_PATH . 'views/admin/product-info-sheet-grid.php';
+        if (!is_readable($template_path)) {
+            wp_die(esc_html__('Product sheet grid template missing.', 'woocommerce'));
+        }
+
+        $store_name = get_bloginfo('name');
+        $logo_url = '';
+        $custom_logo_id = (int) get_theme_mod('custom_logo');
+        if ($custom_logo_id) {
+            $logo_url = wp_get_attachment_image_url($custom_logo_id, 'full') ?: '';
+        }
+        $auto_print = true;
+
+        nocache_headers();
+        include $template_path;
+    }
+
+    /**
+     * Render one compact card for grid export mode.
+     *
+     * @param \WC_Product $product
+     * @return string
+     */
+    private static function render_product_sheet_grid_card_html(\WC_Product $product): string
+    {
+        $template_data = self::prepare_product_sheet_template_data($product);
+        $hero_image = '';
+        if (!empty($template_data['image_urls']) && !empty($template_data['image_urls'][0])) {
+            $hero_image = (string) $template_data['image_urls'][0];
+        } else {
+            $hero_image = (string) wc_placeholder_img_src('woocommerce_single');
+        }
+
+        $category_text = wp_strip_all_tags((string) wc_get_product_category_list($product->get_id(), ', '));
+        $short_plain = trim(preg_replace('/\s+/', ' ', wp_strip_all_tags((string) ($template_data['short_description'] ?? ''))));
+        $description_plain = trim(preg_replace('/\s+/', ' ', wp_strip_all_tags((string) ($template_data['description'] ?? ''))));
+        $overview = $short_plain !== '' ? $short_plain : $description_plain;
+        if ($overview === '') {
+            $overview = wp_strip_all_tags((string) __('No description available.', 'woocommerce'));
+        }
+        $overview = wp_trim_words($overview, 12, '...');
+
+        $sections = [[
+            'title' => (string) __('Overview', 'woocommerce'),
+            'body' => $overview,
+        ]];
+
+        foreach ((array) ($template_data['product_tabs'] ?? []) as $tab) {
+            $title = trim((string) ($tab['title'] ?? ''));
+            $body = trim(preg_replace('/\s+/', ' ', wp_strip_all_tags((string) ($tab['content'] ?? ''))));
+            if ($title === '' || $body === '') {
+                continue;
+            }
+            $sections[] = [
+                'title' => $title,
+                'body' => wp_trim_words($body, 10, '...'),
+            ];
+        }
+
+        ob_start();
+        ?>
+        <article class="product-card">
+            <div class="card-media">
+                <img src="<?php echo esc_url($hero_image); ?>" alt="<?php echo esc_attr($product->get_name()); ?>">
+            </div>
+            <div class="card-body">
+                <p class="card-category"><?php echo esc_html($category_text ?: __('Product', 'woocommerce')); ?></p>
+                <h2 class="card-name"><?php echo esc_html($product->get_name()); ?></h2>
+                <div class="card-sections">
+                    <?php foreach ($sections as $section) : ?>
+                        <div class="card-section">
+                            <h3 class="card-section-title"><?php echo esc_html($section['title']); ?></h3>
+                            <p class="card-summary"><?php echo esc_html($section['body']); ?></p>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </article>
+        <?php
+        return (string) ob_get_clean();
+    }
+
+    /**
+     * Resolve master sheet layout mode.
+     *
+     * @return string
+     */
+    private static function resolve_master_sheet_layout(): string
+    {
+        $requested_layout = isset($_GET['layout']) ? sanitize_key((string) $_GET['layout']) : '';
+        if (in_array($requested_layout, self::get_master_sheet_layout_modes(), true)) {
+            return $requested_layout;
+        }
+        return self::get_master_sheet_default_layout();
+    }
+
+    /**
+     * Return allowed layout modes.
+     *
+     * @return string[]
+     */
+    private static function get_master_sheet_layout_modes(): array
+    {
+        return [self::MASTER_SHEET_LAYOUT_FULL, self::MASTER_SHEET_LAYOUT_GRID];
+    }
+
+    /**
+     * Return default master layout. Change this in code or override via filter.
+     *
+     * @return string
+     */
+    private static function get_master_sheet_default_layout(): string
+    {
+        $layout = apply_filters('haven_core_product_sheet_master_layout', self::MASTER_SHEET_DEFAULT_LAYOUT);
+        $layout = sanitize_key((string) $layout);
+        if (in_array($layout, self::get_master_sheet_layout_modes(), true)) {
+            return $layout;
+        }
+        return self::MASTER_SHEET_DEFAULT_LAYOUT;
     }
 
     /**
@@ -684,7 +849,7 @@ class Products
             'post_type' => 'product',
             'post_status' => ['publish', 'private', 'draft', 'pending'],
             'fields' => 'ids',
-            'posts_per_page' => 200,
+            'posts_per_page' => -1,
             'no_found_rows' => true,
         ];
 
