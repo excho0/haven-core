@@ -632,10 +632,11 @@ class Products
         if ($overview === '') {
             $overview = wp_strip_all_tags((string) __('No description available.', 'woocommerce'));
         }
-        $sections = [[
-            'title' => (string) __('Overview', 'woocommerce'),
-            'body' => $overview,
-        ]];
+        // $sections = [[
+        //     'title' => (string) __('Overview', 'woocommerce'),
+        //     'body' => $overview,
+        // ]];
+        $sections = [];
 
         foreach ((array) ($template_data['product_tabs'] ?? []) as $tab) {
             $title = trim((string) ($tab['title'] ?? ''));
