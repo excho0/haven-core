@@ -101,6 +101,7 @@ if (!defined('ABSPATH')) {
             font-size: 8px;
             line-height: 1.2;
             color: #1e293b;
+            font-weight: 600;
         }
         .card-sections {
             display: grid;
