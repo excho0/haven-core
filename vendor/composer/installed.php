@@ -5,7 +5,7 @@
         'type' => 'wordpress-plugin',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
-        'reference' => 'a46b1780e8de3c054f600a7991f7579940ca0591',
+        'reference' => '89f0ff7e9da86600bf4832e410714925989c2597',
         'name' => 'excho0/haven-core',
         'dev' => true,
     ),
@@ -61,7 +61,7 @@
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
-            'reference' => 'a46b1780e8de3c054f600a7991f7579940ca0591',
+            'reference' => '89f0ff7e9da86600bf4832e410714925989c2597',
             'dev_requirement' => false,
         ),
         'league/container' => array(
@@ -232,6 +232,15 @@
             'aliases' => array(),
             'reference' => '50590a057841fa6bf69d12eceffce3465b9e32cb',
             'dev_requirement' => true,
+        ),
+        'wordpress/mcp-adapter' => array(
+            'pretty_version' => 'v0.4.1',
+            'version' => '0.4.1.0',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../wordpress/mcp-adapter',
+            'aliases' => array(),
+            'reference' => '1a0f9ab868e34b4375be42e873f60765e6632505',
+            'dev_requirement' => false,
         ),
     ),
 );
