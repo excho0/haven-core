@@ -2,10 +2,10 @@
 /**
  * Supplier payload helpers for MCP ability responses.
  *
- * @package HavenCore\Mcp\Support
+ * @package HavenCore\Mcp\Utils
  */
 
-namespace HavenCore\Mcp\Support;
+namespace HavenCore\Mcp\Utils;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -69,3 +69,7 @@ class SupplierPayload {
 	}
 }
 
+// Backward compatibility for previous namespace.
+if ( ! class_exists( 'HavenCore\\Mcp\\Support\\SupplierPayload', false ) ) {
+	class_alias( SupplierPayload::class, 'HavenCore\\Mcp\\Support\\SupplierPayload' );
+}

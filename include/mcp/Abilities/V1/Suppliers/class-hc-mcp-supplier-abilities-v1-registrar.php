@@ -7,7 +7,8 @@
 
 namespace HavenCore\Mcp\Abilities\V1\Suppliers;
 
-use HavenCore\Mcp\Support\SupplierPayload;
+use HavenCore\Mcp\Contracts\AbilitiesV1RegistrarContract;
+use HavenCore\Mcp\Utils\SupplierPayload;
 use HavenCore\Services\HC_Supplier_Service;
 use HavenCore\Settings\Notifications;
 use HavenCore\Utils\UserUtils;
@@ -18,7 +19,64 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Supplier ability registration and execution callbacks (V1).
  */
-class SupplierAbilitiesV1Registrar {
+class SupplierAbilitiesV1Registrar implements AbilitiesV1RegistrarContract {
+	/**
+	 * Ability namespace.
+	 */
+	private const ABILITY_NAMESPACE = 'havencore';
+
+	/**
+	 * Default ability categories.
+	 *
+	 * @var array<string,array{slug:string,label:string,description:string}>
+	 */
+	private const CATEGORY_DEFINITIONS = array(
+		'suppliers' => array(
+			'slug'        => 'havencore-suppliers',
+			'label'       => 'HavenCore Suppliers',
+			'description' => 'Supplier management abilities exposed by HavenCore.',
+		),
+	);
+
+	/**
+	 * Register supplier ability categories.
+	 *
+	 * @return void
+	 */
+	public static function register_categories(): void {
+		if ( ! function_exists( 'wp_register_ability_category' ) ) {
+			return;
+		}
+
+		foreach ( self::get_category_definitions() as $definition ) {
+			$slug = sanitize_key( (string) ( $definition['slug'] ?? '' ) );
+			if ( '' === $slug ) {
+				continue;
+			}
+
+			if ( function_exists( 'wp_is_ability_category_registered' ) && wp_is_ability_category_registered( $slug ) ) {
+				continue;
+			}
+
+			wp_register_ability_category(
+				$slug,
+				array(
+					'label'       => (string) ( $definition['label'] ?? $slug ),
+					'description' => (string) ( $definition['description'] ?? '' ),
+				)
+			);
+		}
+	}
+
+	/**
+	 * Backward-compatible alias.
+	 *
+	 * @return void
+	 */
+	public static function register_category(): void {
+		self::register_categories();
+	}
+
 	/**
 	 * Register all supplier abilities for API version v1.
 	 *
@@ -30,7 +88,7 @@ class SupplierAbilitiesV1Registrar {
 		}
 
 		self::register_ability(
-			'havencore/v1/suppliers-list',
+			self::ability_id( 'suppliers-list' ),
 			'List suppliers with optional filters and pagination.',
 			array(
 				'type'       => 'object',
@@ -48,11 +106,12 @@ class SupplierAbilitiesV1Registrar {
 					'meta'  => array( 'type' => 'object' ),
 				),
 			),
+			'suppliers',
 			array( self::class, 'execute_suppliers_list' )
 		);
 
 		self::register_ability(
-			'havencore/v1/supplier-get',
+			self::ability_id( 'supplier-get' ),
 			'Get supplier by ID.',
 			array(
 				'type'       => 'object',
@@ -62,11 +121,12 @@ class SupplierAbilitiesV1Registrar {
 				),
 			),
 			array( 'type' => 'object' ),
+			'suppliers',
 			array( self::class, 'execute_supplier_get' )
 		);
 
 		self::register_ability(
-			'havencore/v1/supplier-create',
+			self::ability_id( 'supplier-create' ),
 			'Create a supplier.',
 			array(
 				'type'       => 'object',
@@ -84,11 +144,12 @@ class SupplierAbilitiesV1Registrar {
 				),
 			),
 			array( 'type' => 'object' ),
+			'suppliers',
 			array( self::class, 'execute_supplier_create' )
 		);
 
 		self::register_ability(
-			'havencore/v1/supplier-update',
+			self::ability_id( 'supplier-update' ),
 			'Update supplier by ID.',
 			array(
 				'type'       => 'object',
@@ -107,8 +168,78 @@ class SupplierAbilitiesV1Registrar {
 				),
 			),
 			array( 'type' => 'object' ),
+			'suppliers',
 			array( self::class, 'execute_supplier_update' )
 		);
+
+		self::register_ability(
+			self::ability_id( 'supplier-delete' ),
+			'Delete supplier by ID with safety checks.',
+			array(
+				'type'       => 'object',
+				'required'   => array( 'supplier_id' ),
+				'properties' => array(
+					'supplier_id'  => array( 'type' => 'integer', 'minimum' => 1 ),
+					'force_delete' => array( 'type' => 'boolean' ),
+					'reassign'     => array( 'type' => 'integer', 'minimum' => 1 ),
+				),
+			),
+			array( 'type' => 'object' ),
+			'suppliers',
+			array( self::class, 'execute_supplier_delete' )
+		);
+	}
+
+	/**
+	 * Return ability IDs exposed by this registrar.
+	 *
+	 * @return string[]
+	 */
+	public static function get_ability_ids(): array {
+		return array(
+			self::ability_id( 'suppliers-list' ),
+			self::ability_id( 'supplier-get' ),
+			self::ability_id( 'supplier-create' ),
+			self::ability_id( 'supplier-update' ),
+			self::ability_id( 'supplier-delete' ),
+		);
+	}
+
+	/**
+	 * Build a compliant ability ID.
+	 *
+	 * WordPress abilities allow one "/" separator, so we use:
+	 * havencore/<ability-name>.
+	 *
+	 * @param string $ability_name Ability slug.
+	 * @return string
+	 */
+	public static function ability_id( string $ability_name ): string {
+		$ability_name = strtolower( preg_replace( '/[^a-z0-9-]+/', '-', $ability_name ) );
+		return self::ABILITY_NAMESPACE . '/' . trim( $ability_name, '-' );
+	}
+
+	/**
+	 * Return category definitions (filterable for future categories).
+	 *
+	 * @return array<string,array{slug:string,label:string,description:string}>
+	 */
+	private static function get_category_definitions(): array {
+		return apply_filters( 'havencore_mcp_ability_categories_v1', self::CATEGORY_DEFINITIONS );
+	}
+
+	/**
+	 * Resolve category key to category slug.
+	 *
+	 * @param string $category_key Category key.
+	 * @return string
+	 */
+	private static function get_category_slug( string $category_key ): string {
+		$definitions = self::get_category_definitions();
+		if ( isset( $definitions[ $category_key ]['slug'] ) ) {
+			return sanitize_key( (string) $definitions[ $category_key ]['slug'] );
+		}
+		return sanitize_key( $category_key );
 	}
 
 	/**
@@ -118,14 +249,16 @@ class SupplierAbilitiesV1Registrar {
 	 * @param string   $description Human description.
 	 * @param array    $input_schema Input schema.
 	 * @param array    $output_schema Output schema.
+	 * @param string   $category_key Ability category key.
 	 * @param callable $execute_callback Execute callback.
 	 * @return void
 	 */
-	private static function register_ability( string $name, string $description, array $input_schema, array $output_schema, callable $execute_callback ): void {
+	private static function register_ability( string $name, string $description, array $input_schema, array $output_schema, string $category_key, callable $execute_callback ): void {
 		wp_register_ability(
 			$name,
 			array(
 				'label'               => $description,
+				'category'            => self::get_category_slug( $category_key ),
 				'description'         => $description,
 				'input_schema'        => $input_schema,
 				'output_schema'       => $output_schema,
@@ -348,5 +481,47 @@ class SupplierAbilitiesV1Registrar {
 		$updated = $service->get( $supplier_id );
 		return SupplierPayload::format( $updated );
 	}
-}
 
+	/**
+	 * Delete supplier ability callback.
+	 *
+	 * @param array $args Ability args.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public static function execute_supplier_delete( array $args ) {
+		$supplier_id = absint( $args['supplier_id'] ?? 0 );
+		if ( ! $supplier_id ) {
+			return new WP_Error( 'invalid_supplier_id', 'Invalid supplier ID.' );
+		}
+
+		$service = new HC_Supplier_Service();
+		$result = $service->delete_with_safeguards(
+			$supplier_id,
+			array(
+				'force'    => ! empty( $args['force_delete'] ),
+				'reassign' => isset( $args['reassign'] ) ? absint( $args['reassign'] ) : null,
+			)
+		);
+
+		if ( is_wp_error( $result ) ) {
+			$error_data = $result->get_error_data();
+			$pending_fulfillment_order_ids = array();
+			if ( is_array( $error_data ) ) {
+				$raw_orders = $error_data['pending_fulfillment_order_ids'] ?? array();
+				if ( is_array( $raw_orders ) ) {
+					$pending_fulfillment_order_ids = array_values( array_filter( array_map( 'absint', $raw_orders ) ) );
+				}
+			}
+
+			return array(
+				'deleted'            => false,
+				'supplier_id'        => $supplier_id,
+				'reason'             => is_array( $error_data ) ? (string) ( $error_data['reason'] ?? $result->get_error_code() ) : $result->get_error_code(),
+				'message'            => $result->get_error_message(),
+				'pending_fulfillment_order_ids' => $pending_fulfillment_order_ids,
+			);
+		}
+
+		return $result;
+	}
+}

@@ -7,7 +7,7 @@
 
 namespace HavenCore\Mcp;
 
-use HavenCore\Mcp\Core\McpBootstrap;
+use HavenCore\Mcp\Bootstrap\McpBootstrap;
 
 defined( 'ABSPATH' ) || exit;
 
