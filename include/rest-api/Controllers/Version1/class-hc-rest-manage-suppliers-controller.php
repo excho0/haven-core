@@ -232,44 +232,40 @@ class HC_REST_Manage_Suppliers_V1_Controller extends HC_REST_Controller {
 	}
 
 	/**
-	 * Deletes a supplier and unassigns them from all products.
+	 * Deletes a supplier with safety checks handled by service layer.
 	 *
 	 * @param WP_REST_Request $request The request containing supplier_id.
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function delete_supplier( WP_REST_Request $request ) {
 		$id = absint($request->get_param('supplier_id'));
+		$force_delete = rest_sanitize_boolean( $request->get_param( 'force_delete' ) );
+		$reassign = absint( $request->get_param( 'reassign' ) );
 
 		if (! $id) {
 			return new WP_Error('invalid_id', 'Invalid supplier ID.', ['status' => 400]);
 		}
 
 		$service = new HC_Supplier_Service();
-		$supplier = $service->get($id);
 
-		if (! $supplier) {
-			return new WP_Error('not_found', 'Supplier not found.', ['status' => 404]);
+		$result = $service->delete_with_safeguards(
+			$id,
+			array(
+				'force'    => (bool) $force_delete,
+				'reassign' => $reassign ?: null,
+			)
+		);
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
 		}
 
-		$products = get_posts([
-			'post_type'   => 'product',
-			'numberposts' => -1,
-			'meta_query'  => [[
-				'key'     => '_supplier_id',
-				'value'   => $id,
-				'compare' => '=',
-			]]
-		]);
-
-		foreach ($products as $product) {
-			delete_post_meta($product->ID, '_supplier_id');
-		}
-
-		$deleted = $service->delete($id);
-		if (! $deleted) {
-			return new WP_Error('delete_failed', 'Failed to delete supplier.', ['status' => 500]);
-		}
-
-		return new WP_REST_Response(['message' => 'Supplier deleted.'], 200);
+		return new WP_REST_Response(
+			array(
+				'message' => 'Supplier deleted.',
+				'result'  => $result,
+			),
+			200
+		);
 	}
 }

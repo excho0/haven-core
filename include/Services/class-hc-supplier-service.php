@@ -5,6 +5,7 @@ namespace HavenCore\Services;
 use HavenCore\Classes\HC_Supplier;
 use HavenCore\Classes\HC_Data_Store;
 use HavenCore\Utils\UserUtils;
+use WP_Error;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -211,17 +212,158 @@ class HC_Supplier_Service {
     }
 
     /**
-     * Delete a supplier.
+     * Delete a supplier with safety checks.
      *
-     * @param int      $supplier_id
+     * @param int      $supplier_id Supplier ID.
      * @param int|null $reassign Optional reassignment user ID.
+     * @param bool     $force Whether to bypass unfinished-order safeguards.
      * @return bool
      */
-    public function delete( int $supplier_id, ?int $reassign = null ): bool {
-        $supplier = $this->get( $supplier_id );
-        if ( ! $supplier ) return false;
+    public function delete( int $supplier_id, ?int $reassign = null, bool $force = false ): bool {
+        $result = $this->delete_with_safeguards(
+            $supplier_id,
+            array(
+                'reassign' => $reassign,
+                'force'    => $force,
+            )
+        );
 
-        return $supplier->delete_and_reassign( $reassign );
+        return ! is_wp_error( $result ) && ! empty( $result['deleted'] );
+    }
+
+    /**
+     * Delete a supplier and return structured outcome or explicit error.
+     *
+     * @param int   $supplier_id Supplier ID.
+     * @param array $args Deletion args.
+     * @return array<string,mixed>|WP_Error
+     */
+    public function delete_with_safeguards( int $supplier_id, array $args = array() ) {
+        $supplier = $this->get( $supplier_id );
+        if ( ! $supplier ) {
+            return new WP_Error( 'supplier_not_found', 'Supplier not found.', array( 'status' => 404 ) );
+        }
+
+        $args = wp_parse_args(
+            $args,
+            array(
+                'reassign' => null,
+                'force'    => false,
+            )
+        );
+
+        $force = ! empty( $args['force'] );
+        $reassign = isset( $args['reassign'] ) && is_numeric( $args['reassign'] ) ? absint( $args['reassign'] ) : null;
+
+        if ( ! $force ) {
+            $pending_fulfillment_order_ids = $this->get_unfinished_order_ids_for_supplier( $supplier );
+            if ( ! empty( $pending_fulfillment_order_ids ) ) {
+                return new WP_Error(
+                    'supplier_has_unfinished_orders',
+                    'Supplier has unfinished fulfillment actions. Resolve or force delete.',
+                    array(
+                        'status'                        => 409,
+                        'reason'                        => 'supplier_orders_not_fulfilled',
+                        'pending_fulfillment_order_ids' => $pending_fulfillment_order_ids,
+                    )
+                );
+            }
+        }
+
+        $products_unassigned = $this->unassign_supplier_from_products( $supplier_id );
+        $deleted = $supplier->delete_and_reassign( $reassign );
+        if ( ! $deleted ) {
+            return new WP_Error( 'delete_failed', 'Failed to delete supplier.', array( 'status' => 500 ) );
+        }
+
+        return array(
+            'deleted'            => true,
+            'supplier_id'        => $supplier_id,
+            'products_unassigned'=> $products_unassigned,
+            'forced'             => (bool) $force,
+        );
+    }
+
+    /**
+     * Return order IDs where supplier fulfillment is still not complete.
+     *
+     * @param HC_Supplier $supplier Supplier model.
+     * @return int[]
+     */
+    private function get_unfinished_order_ids_for_supplier( HC_Supplier $supplier ): array {
+        $supplier_id = (int) $supplier->get_id();
+        if ( ! $supplier_id ) {
+            return array();
+        }
+
+        if ( ! function_exists( 'wc_get_order' ) ) {
+            return array();
+        }
+
+        $order_ids = array_filter( array_map( 'absint', (array) $supplier->get_assigned_orders() ) );
+        if ( empty( $order_ids ) ) {
+            return array();
+        }
+
+        $terminal_order_statuses = array( 'completed', 'cancelled', 'refunded', 'failed', 'trash' );
+        $unfinished = array();
+
+        foreach ( $order_ids as $order_id ) {
+            $order = wc_get_order( $order_id );
+            if ( ! $order ) {
+                continue;
+            }
+
+            if ( in_array( $order->get_status(), $terminal_order_statuses, true ) ) {
+                continue;
+            }
+
+            $supplier_data = $order->get_meta( '_supplier_data', true );
+            $entry = is_array( $supplier_data ) && isset( $supplier_data[ $supplier_id ] ) ? $supplier_data[ $supplier_id ] : null;
+            $status = is_array( $entry ) ? sanitize_text_field( (string) ( $entry['fulfillment_status'] ?? 'pending' ) ) : 'pending';
+
+            if ( 'fulfilled' !== $status ) {
+                $unfinished[] = (int) $order_id;
+            }
+        }
+
+        return array_values( array_unique( $unfinished ) );
+    }
+
+    /**
+     * Remove supplier assignment from product and variation meta.
+     *
+     * @param int $supplier_id Supplier ID.
+     * @return int Number of posts updated.
+     */
+    private function unassign_supplier_from_products( int $supplier_id ): int {
+        if ( $supplier_id <= 0 ) {
+            return 0;
+        }
+
+        $products = get_posts(
+            array(
+                'post_type'   => array( 'product', 'product_variation' ),
+                'numberposts' => -1,
+                'fields'      => 'ids',
+                'meta_query'  => array(
+                    array(
+                        'key'     => '_supplier_id',
+                        'value'   => $supplier_id,
+                        'compare' => '=',
+                    ),
+                ),
+            )
+        );
+
+        $count = 0;
+        foreach ( (array) $products as $post_id ) {
+            if ( delete_post_meta( (int) $post_id, '_supplier_id' ) ) {
+                ++$count;
+            }
+        }
+
+        return $count;
     }
 
     /**
