@@ -171,9 +171,11 @@ if (is_admin()) {
 }
 
 use HavenCore\RestApi\Server;
+use HavenCore\Mcp\HC_MCP_Adapter;
 
 add_action( 'plugins_loaded', function () {
     Server::instance()->init();
+    HC_MCP_Adapter::init();
 } );
 
 // ===============================================

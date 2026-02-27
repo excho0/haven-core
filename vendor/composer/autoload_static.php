@@ -18,6 +18,10 @@ class ComposerStaticInit972534498555f05e711839f1d249262f
     );
 
     public static $prefixLengthsPsr4 = array (
+        'W' => 
+        array (
+            'WP\\MCP\\' => 7,
+        ),
         'S' => 
         array (
             'Symfony\\Polyfill\\Mbstring\\' => 26,
@@ -57,6 +61,10 @@ class ComposerStaticInit972534498555f05e711839f1d249262f
     );
 
     public static $prefixDirsPsr4 = array (
+        'WP\\MCP\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/wordpress/mcp-adapter/includes',
+        ),
         'Symfony\\Polyfill\\Mbstring\\' => 
         array (
             0 => __DIR__ . '/..' . '/symfony/polyfill-mbstring',
@@ -160,6 +168,11 @@ class ComposerStaticInit972534498555f05e711839f1d249262f
         'HavenCore\\DataStores\\HC_Message_Data_Store' => __DIR__ . '/../..' . '/include/DataStores/class-hc-message-data-store.php',
         'HavenCore\\DataStores\\HC_Supplier_Data_Store' => __DIR__ . '/../..' . '/include/DataStores/class-hc-supplier-data-store.php',
         'HavenCore\\Interfaces\\HC_Object_Data_Store_Interface' => __DIR__ . '/../..' . '/include/Interfaces/hc-object-data-store-interface.php',
+        'HavenCore\\Mcp\\Abilities\\V1\\Suppliers\\SupplierAbilitiesV1Registrar' => __DIR__ . '/../..' . '/include/mcp/Abilities/V1/Suppliers/SupplierAbilitiesV1Registrar.php',
+        'HavenCore\\Mcp\\Core\\McpBootstrap' => __DIR__ . '/../..' . '/include/mcp/Core/McpBootstrap.php',
+        'HavenCore\\Mcp\\HC_MCP_Adapter' => __DIR__ . '/../..' . '/include/mcp/class-hc-mcp-adapter.php',
+        'HavenCore\\Mcp\\Servers\\V1\\SupplierMcpServerV1' => __DIR__ . '/../..' . '/include/mcp/Servers/V1/SupplierMcpServerV1.php',
+        'HavenCore\\Mcp\\Support\\SupplierPayload' => __DIR__ . '/../..' . '/include/mcp/Support/SupplierPayload.php',
         'HavenCore\\RestApi\\Controllers\\V1\\HC_REST_Account_V1_Controller' => __DIR__ . '/../..' . '/include/rest-api/Controllers/Version1/class-hc-rest-account-controller.php',
         'HavenCore\\RestApi\\Controllers\\V1\\HC_REST_CustomerCheckout_V1_Controller' => __DIR__ . '/../..' . '/include/rest-api/Controllers/Version1/class-hc-rest-checkout-controller.php',
         'HavenCore\\RestApi\\Controllers\\V1\\HC_REST_Manage_Suppliers_V1_Controller' => __DIR__ . '/../..' . '/include/rest-api/Controllers/Version1/class-hc-rest-manage-suppliers-controller.php',
@@ -175,6 +188,7 @@ class ComposerStaticInit972534498555f05e711839f1d249262f
         'HavenCore\\Settings\\General' => __DIR__ . '/../..' . '/include/Settings/General.php',
         'HavenCore\\Settings\\Integrations' => __DIR__ . '/../..' . '/include/Settings/Integrations.php',
         'HavenCore\\Settings\\Notifications' => __DIR__ . '/../..' . '/include/Settings/Notifications.php',
+        'HavenCore\\Settings\\Suppliers' => __DIR__ . '/../..' . '/include/Settings/Suppliers.php',
         'HavenCore\\Settings\\WooCommerce' => __DIR__ . '/../..' . '/include/Settings/WooCommerce.php',
         'HavenCore\\Utils\\ArrayHelpers' => __DIR__ . '/../..' . '/include/Utils/class-array-helpers.php',
         'HavenCore\\Utils\\PageUtils' => __DIR__ . '/../..' . '/include/Utils/class-page-manager.php',
