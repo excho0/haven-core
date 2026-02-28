@@ -54,17 +54,19 @@ class HavencoreMcpServerV1 {
 	}
 
 	/**
-	 * Build a versioned namespace like: /wp-json/<prefix>/havencore/mcp/v1
+	 * Build a versioned namespace like: /wp-json/havencore/mcp/v1
 	 *
 	 * @return string
 	 */
 	private static function get_server_namespace(): string {
-		$prefix = sanitize_key( (string) apply_filters( 'havencore_mcp_rest_prefix', 'hc' ) );
-		if ( '' === $prefix ) {
-			$prefix = 'hc';
+		$namespace = (string) apply_filters( 'havencore_mcp_rest_namespace', 'havencore/mcp' );
+		$namespace = trim( $namespace, " \t\n\r\0\x0B/" );
+
+		if ( '' === $namespace ) {
+			$namespace = 'havencore/mcp';
 		}
 
-		return $prefix . '/havencore/mcp';
+		return $namespace;
 	}
 
 	/**
