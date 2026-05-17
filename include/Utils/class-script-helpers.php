@@ -21,6 +21,23 @@ class ScriptHelpers
 {
     private static bool $fetchClientLoaded = false;
 
+    private static function assetUrl(string $relativePath, bool $forceTimestamp = false): string
+    {
+        $relativePath = ltrim($relativePath, '/');
+        $url          = rtrim(HAVEN_CORE_URL, '/') . '/' . $relativePath;
+        $path         = rtrim(HAVEN_CORE_PATH, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+
+        if ($forceTimestamp) {
+            return $url . '?v=' . time();
+        }
+
+        if (file_exists($path)) {
+            return $url . '?ver=' . filemtime($path);
+        }
+
+        return $url;
+    }
+
     /**
      * Initializes wp-api-fetch and related dependencies manually.
      *
@@ -80,67 +97,69 @@ class ScriptHelpers
         $opts   = array_merge($defaults, $options);
         $mode   = strtolower($opts['mode']) === 'auto' ? (defined('WP_DEBUG') && WP_DEBUG ? 'dev' : 'prod') : strtolower($opts['mode']);
         $isProd = $mode === 'prod';
-        $base   = rtrim(HAVEN_CORE_URL, '/') . '/assets';
-        $ver = (!$isProd) ? ('?v=' . time()) : '';
+        $asset = static fn(string $path): string => self::assetUrl(
+            'assets/' . ltrim($path, '/'),
+            !$isProd
+        );
 
         // Scripts
         $scripts = [
             // Core Vue
-            $isProd ? "$base/js/vue.global.prod.js"        : "$base/js/vue.global.js",
-            $isProd ? "$base/js/vue-router.global.prod.js" : "$base/js/vue-router.global.js",
-            $isProd ? "$base/js/pinia.iife.prod.js$ver"    : "$base/js/pinia.iife.js$ver",
+            $asset($isProd ? 'js/vue.global.prod.js' : 'js/vue.global.js'),
+            $asset($isProd ? 'js/vue-router.global.prod.js' : 'js/vue-router.global.js'),
+            $asset($isProd ? 'js/pinia.iife.prod.js' : 'js/pinia.iife.js'),
         ];
 
         if ($opts['withGlobalStore']) {
-            $scripts[] = "$base/js/globalStore.js$ver";
+            $scripts[] = $asset('js/globalStore.js');
         }
 
         if ($opts['withPrimeVue']) {
-            $scripts[] = "$base/js/primevue.min.js";
+            $scripts[] = $asset('js/primevue.min.js');
         }
 
         if ($opts['withSonner']) {
-            $scripts[] = "$base/js/vue-sonner.umd.prod.js$ver";
+            $scripts[] = $asset('js/vue-sonner.umd.prod.js');
         }
 
         if ($opts['withDotLottie']) {
-            $scripts[] = "$base/js/vue-dotlottie.umd.prod.js$ver";
+            $scripts[] = $asset('js/vue-dotlottie.umd.prod.js');
         }
 
         if ($opts['withConfetti']) {
-            $scripts[] = "$base/js/confetti.browser.js";
+            $scripts[] = $asset('js/confetti.browser.js');
         }
 
         if ($opts['withDraggable']) {
-            $scripts[] = "$base/js/Sortable.min.js";                // 🟢 Sortable core
-            $scripts[] = "$base/js/vuedraggable.umd.js";            // 🟢 Vue draggable (same file for both modes)
+            $scripts[] = $asset('js/Sortable.min.js');              // 🟢 Sortable core
+            $scripts[] = $asset('js/vuedraggable.umd.js');          // 🟢 Vue draggable (same file for both modes)
         }   
 
         if ($opts['withMiniQr']) {
-            $scripts[] = "$base/js/mini-qr.umd.prod.js";
+            $scripts[] = $asset('js/mini-qr.umd.prod.js');
         }
 
         if ($opts['withTheme']) {
-            $scripts[] = "$base/js/aura.min.js";
+            $scripts[] = $asset('js/aura.min.js');
         }
 
         // Styles
         $styles = [];
 
         if ($opts['withMainStyle']) {
-            $styles[] = "$base/css/style.min.css$ver";
+            $styles[] = $asset('css/style.min.css');
         }
 
         if ($opts['withFrontendCss']) {
-            $styles[] = "$base/css/public-front.min.css$ver";
+            $styles[] = $asset('css/public-front.min.css');
         }
 
         if ($opts['withTailwind']) {
-            $styles[] = "$base/css/tailwind.min.css";
+            $styles[] = $asset('css/tailwind.min.css');
         }
 
         if ($opts['withPrimeIcons']) {
-            $styles[] = "$base/css/primeicons/primeicons.css";
+            $styles[] = $asset('css/primeicons/primeicons.css');
         }
 
         $fetchClientDebug = $opts['fetchClientDebug'];
@@ -173,7 +192,6 @@ class ScriptHelpers
 
         self::$fetchClientLoaded = true;
 
-        $base = rtrim(HAVEN_CORE_URL, '/') . '/assets';
         $debugFlag = $debug ? 'true' : 'false';
         echo <<<HTML
 <script>
@@ -181,7 +199,7 @@ class ScriptHelpers
     window.HavenCoreFetchClientConfig.debug = {$debugFlag};
 </script>
 HTML;
-        $script = $base . '/js/fetchClient.js';
+        $script = self::assetUrl('assets/js/fetchClient.js', $debug);
         echo '<script src="' . esc_url($script) . '"></script>' . "\n";
     }
 

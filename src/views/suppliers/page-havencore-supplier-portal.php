@@ -111,6 +111,8 @@
                 background: #ffffff;
                 z-index: 2;
                 border-top: 1px solid #e5e7eb;
+                width: 100%;
+                box-sizing: border-box;
             }
         </style>
     </head>
@@ -4512,7 +4514,7 @@
                     },
                 },
                 template: `
-                    <div class="h-full flex flex-col lg:flex-row overflow-hidden">
+                    <div class="hc-viewport-shell h-full min-h-0 flex flex-col lg:flex-row overflow-hidden">
                         <div
                             class="flex flex-col lg:w-1/3"
                             v-if="!mobile || !selectedConversation"
@@ -4613,7 +4615,7 @@
 
                         <div
                             v-if="!mobile || selectedConversation"
-                            class="flex-1 flex flex-col bg-surface-50 dark:bg-surface-900/60 rounded-t-none lg:rounded-tr-xl lg:rounded-br-xl"
+                            class="flex-1 min-h-0 flex flex-col bg-surface-50 dark:bg-surface-900/60 rounded-t-none lg:rounded-tr-xl lg:rounded-br-xl"
                         >
                             <template v-if="selectedConversation">
                                 <div class="px-4 py-3 flex flex-wrap gap-2 items-center justify-between sticky top-0 z-10 bg-surface-50/95 dark:bg-surface-900/95 backdrop-blur">
@@ -4646,7 +4648,7 @@
 
                                 <div
                                     :class="[
-                                        'flex-1 overflow-y-auto space-y-1 min-h-[250px]',
+                                        'flex-1 min-h-0 overflow-y-auto space-y-1',
                                         messagesLayoutClass,
                                         {
                                             'messages-pane': !messagesLoading && selectedConversation,
@@ -4775,9 +4777,9 @@
 
                                 <Divider class="my-0" />
 
-                                <div class="p-3">
+                                <div class="p-3 hc-message-composer">
                                     <div class="flex items-end gap-2">
-                                        <InputGroup class="w-full">
+                                        <InputGroup class="w-full hc-message-composer__group">
                                             <Textarea
                                                 v-model="newMessage"
                                                 :placeholder="i18n.message_placeholder"
@@ -4791,7 +4793,7 @@
                                                     icon="pi pi-send"
                                                     :loading="sendingMessage"
                                                     :disabled="!newMessage.trim()"
-                                                    class="h-full"
+                                                    class="h-full hc-message-composer__action"
                                                     @click="sendMessage"
                                                 />
                                             </InputGroupAddon>
@@ -5051,7 +5053,7 @@
                         </header>
 
                         <!-- Main Area: Sidebar + Content -->
-                        <div class="flex flex-1 overflow-hidden shadow-sm">
+                        <div class="flex flex-1 min-h-0 overflow-hidden shadow-sm">
                             <!-- Static Sidebar -->
                             <aside v-if="!mobile" :class="['w-64', 'flex', 'flex-col', { 'collapsed': isCollapsed }]">
                                 <!-- Sidebar items -->
@@ -5143,13 +5145,13 @@
                             </transition>
 
                             <!-- Scrollable Main Content -->
-                            <div class="view-container relative flex-1 h-full overflow-hidden">
+                            <div class="view-container relative flex-1 min-h-0 h-full overflow-hidden">
                                 <router-view v-slot="{ Component }">
                                     <transition name="card-swap">
                                         <component
                                             :is="Component"
                                             :key="$route.name || 'route-view'"
-                                            class="app-content-styled h-full overflow-y-hidden"
+                                            class="app-content-styled h-full min-h-0 overflow-y-hidden"
                                         />
                                     </transition>
                                 </router-view>

@@ -8,6 +8,12 @@ body {
     background: none;
 }
 
+html,
+body,
+#havencore-app {
+    min-height: 100%;
+}
+
 
 /* 
 // END
@@ -57,6 +63,24 @@ body {
     [dir="rtl"] .app-content-styled {
         border-top-right-radius: 30px;
         border-top-left-radius: 30px;
+    }
+}
+
+@media (max-width: 1024px), (max-height: 900px) {
+    .app-content-styled {
+        padding: 1rem;
+    }
+}
+
+.hc-viewport-shell {
+    min-height: 100vh;
+    height: 100vh;
+}
+
+@supports (height: 100dvh) {
+    .hc-viewport-shell {
+        min-height: 100dvh;
+        height: 100dvh;
     }
 }
 
@@ -1156,6 +1180,70 @@ even if global styles (like from WP admin) interfere with checkboxes/radios */
 
 .messages-pane--ready {
     opacity: 1;
+}
+
+.hc-message-composer {
+    width: 100%;
+    flex-shrink: 0;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+.hc-message-composer__group.p-inputgroup {
+    width: 100%;
+    align-items: stretch;
+    display: flex;
+    flex-direction: row;
+    gap: 0;
+}
+
+.hc-message-composer__group .p-inputtextarea {
+    min-width: 0;
+    width: 100%;
+}
+
+.hc-message-composer__group .p-inputgroupaddon {
+    flex: 0 0 auto;
+}
+
+.hc-message-composer__action {
+    min-height: 40px;
+}
+
+@media (max-width: 1024px), (max-height: 900px) {
+    .hc-message-composer__group.p-inputgroup {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: stretch !important;
+        gap: 0 !important;
+        flex-wrap: nowrap !important;
+    }
+
+    .hc-message-composer__group > .p-component,
+    .hc-message-composer__group > .p-inputwrapper,
+    .hc-message-composer__group > .p-inputwrapper > .p-component {
+        min-width: 0 !important;
+        flex: 1 1 auto !important;
+    }
+
+    .hc-message-composer__group .p-inputgroupaddon {
+        display: flex !important;
+        width: auto !important;
+        min-width: 0 !important;
+        flex: 0 0 auto !important;
+    }
+
+    .hc-message-composer__group .p-inputtextarea {
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .hc-message-composer__action.p-button {
+        width: auto !important;
+        min-width: 44px !important;
+        justify-content: center !important;
+        min-height: 44px !important;
+    }
 }
 /* 
 // END
