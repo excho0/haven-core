@@ -496,7 +496,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		}
 
 		wp_set_password( $new_password, $user->ID );
-		wp_set_auth_cookie( $user->ID );
+		$this->restore_user_session( $user->ID );
 
 		try {
 			$service  = new HC_Supplier_Service();
@@ -517,6 +517,18 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		}
 
 		return new WP_REST_Response( [ 'message' => 'Password updated.' ], 200 );
+	}
+
+	private function restore_user_session( int $user_id ): void {
+		$user = get_user_by( 'id', $user_id );
+
+		wp_clear_auth_cookie();
+		wp_set_current_user( $user_id );
+		wp_set_auth_cookie( $user_id, false, is_ssl() );
+
+		if ( $user instanceof \WP_User ) {
+			do_action( 'wp_login', $user->user_login, $user );
+		}
 	}
 
 	public function save_metadata( WP_REST_Request $request ) {

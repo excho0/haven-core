@@ -258,12 +258,7 @@ class HC_REST_Account_V1_Controller extends HC_REST_Controller
             return $user_id;
         }
 
-        if (function_exists('wc_set_customer_auth_cookie')) {
-            wc_set_customer_auth_cookie($user_id);
-        } else {
-            wp_set_current_user($user_id);
-            wp_set_auth_cookie($user_id);
-        }
+        $this->restore_user_session($user_id);
 
         $meta_updates = $this->apply_registration_meta($user_id, $record['meta'] ?? []);
 
@@ -290,17 +285,25 @@ class HC_REST_Account_V1_Controller extends HC_REST_Controller
 
         wp_set_password($password, $user_id);
 
-        if (function_exists('wc_set_customer_auth_cookie')) {
-            wc_set_customer_auth_cookie($user_id);
-        } else {
-            wp_set_current_user($user_id);
-            wp_set_auth_cookie($user_id);
-        }
+        $this->restore_user_session($user_id);
 
         return [
             'message' => __('Password updated successfully.', HAVEN_CORE_TEXT_DOMAIN),
             'user_id' => $user_id,
         ];
+    }
+
+    private function restore_user_session(int $user_id): void
+    {
+        $user = get_user_by('id', $user_id);
+
+        wp_clear_auth_cookie();
+        wp_set_current_user($user_id);
+        wp_set_auth_cookie($user_id, false, is_ssl());
+
+        if ($user instanceof \WP_User) {
+            do_action('wp_login', $user->user_login, $user);
+        }
     }
 
     private function password_meets_requirements(string $password): bool
