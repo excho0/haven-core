@@ -103,6 +103,12 @@ class HC_Settings {
                 'tooltip' => 'Enforces strict field validation when adding new suppliers.',
                 'icon'    => 'pi pi-shield',
             ],
+            'allow_supplier_price_editing' => [
+                'key'     => 'allow_supplier_price_editing',
+                'default' => false,
+                'tooltip' => 'Allow suppliers to edit supplier pricing for their products and variations inside the supplier portal.',
+                'icon'    => 'pi pi-dollar',
+            ],
             'customer_info_print' => [
                 'icon' => 'pi pi-print',
                 'use_mobile_icon' => [

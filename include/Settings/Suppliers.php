@@ -22,4 +22,9 @@ class Suppliers
         $value = self::s()->get('suppliers');
         return is_array($value) ? $value : [];
     }
+
+    public static function supplierPriceEditingEnabled(): bool
+    {
+        return self::s()->enabled('suppliers.allow_supplier_price_editing', false);
+    }
 }

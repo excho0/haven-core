@@ -11,6 +11,7 @@ use HavenCore\Services\HC_Supplier_Service;
 use HavenCore\WooCommerce\Hooks\Orders;
 use HavenCore\Settings\Notifications;
 use HavenCore\Settings\Integrations;
+use HavenCore\Settings\Suppliers;
 
 class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 
@@ -221,7 +222,8 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			$manage_stock   = array_key_exists( 'manage_stock', (array) $body ) ? (bool) $body['manage_stock'] : null;
 			$stock_quantity = array_key_exists( 'stock_quantity', (array) $body ) ? $body['stock_quantity'] : null;
 			$stock_status   = isset( $body['stock_status'] ) ? sanitize_text_field( $body['stock_status'] ) : null;
-			$supplier_price = isset( $body['supplier_price'] ) ? sanitize_text_field( (string) $body['supplier_price'] ) : null;
+			$supplier_price_provided = array_key_exists( 'supplier_price', (array) $body );
+			$supplier_price = $supplier_price_provided ? sanitize_text_field( (string) $body['supplier_price'] ) : null;
 			$sku            = array_key_exists( 'sku', (array) $body ) ? (string) $body['sku'] : null;
 
 			if ( ! $variation_id ) {
@@ -238,6 +240,10 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		$current = wp_get_current_user();
 		if ( $owner !== (int) $current->ID && ! wc_current_user_has_role( 'administrator' ) ) {
 			return new WP_Error( 'forbidden', 'You cannot update this variation.', [ 'status' => 403 ] );
+		}
+
+		if ( $supplier_price_provided && ! $this->supplier_price_editing_enabled() ) {
+			return new WP_Error( 'forbidden_supplier_price_edit', 'Supplier price editing is disabled.', [ 'status' => 403 ] );
 		}
 
 		$before_state = $this->capture_inventory_snapshot( $variation );
@@ -266,7 +272,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 			$variation->save();
 
 			// Update supplier price meta if provided
-		if ( $supplier_price !== null ) {
+		if ( $supplier_price_provided ) {
 			$normalized = str_replace( ',', '.', preg_replace( '/[^0-9\.,-]/', '', $supplier_price ) );
 			update_post_meta( $variation_id, '_supplier_price', $normalized );
 		}
@@ -1520,7 +1526,8 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		$manage_stock   = isset( $body['manage_stock'] ) ? (bool) $body['manage_stock'] : null;
 		$stock_quantity = isset( $body['stock_quantity'] ) ? max( 0, (int) $body['stock_quantity'] ) : null;
 		$stock_status   = isset( $body['stock_status'] ) ? sanitize_text_field( $body['stock_status'] ) : null;
-		$supplier_price = isset( $body['supplier_price'] ) ? sanitize_text_field( (string) $body['supplier_price'] ) : null;
+		$supplier_price_provided = array_key_exists( 'supplier_price', (array) $body );
+		$supplier_price = $supplier_price_provided ? sanitize_text_field( (string) $body['supplier_price'] ) : null;
 		$sku            = array_key_exists( 'sku', (array) $body ) ? (string) $body['sku'] : null;
 
 		if ( ! $product_id ) {
@@ -1535,6 +1542,10 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		$owner = (int) get_post_meta( $product_id, '_supplier_id', true );
 		if ( $owner !== $supplier_id && ! wc_current_user_has_role( 'administrator' ) ) {
 			return new WP_Error( 'forbidden', 'You cannot update stock for this product.', [ 'status' => 403 ] );
+		}
+
+		if ( $supplier_price_provided && ! $this->supplier_price_editing_enabled() ) {
+			return new WP_Error( 'forbidden_supplier_price_edit', 'Supplier price editing is disabled.', [ 'status' => 403 ] );
 		}
 
 		$before_state = $this->capture_inventory_snapshot( $product );
@@ -1561,7 +1572,7 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 		$product->save();
 
 		// Update supplier price meta if provided
-		if ( $supplier_price !== null ) {
+		if ( $supplier_price_provided ) {
 			// Normalize decimal format (allow only numbers, dot, comma -> convert comma to dot)
 			$normalized = str_replace( ',', '.', preg_replace( '/[^0-9\.,-]/', '', $supplier_price ) );
 			update_post_meta( $product_id, '_supplier_price', $normalized );
@@ -1597,6 +1608,14 @@ class HC_REST_Supplier_Portal_V1_Controller extends HC_REST_Controller {
 				'supplier_price' => get_post_meta( $product->get_id(), '_supplier_price', true ),
 			]
 		] );
+	}
+
+	private function supplier_price_editing_enabled(): bool {
+		if ( wc_current_user_has_role( 'administrator' ) ) {
+			return true;
+		}
+
+		return Suppliers::supplierPriceEditingEnabled();
 	}
 
 	public function reassign_order_supplier( WP_REST_Request $request ) {

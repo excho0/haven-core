@@ -8,6 +8,7 @@
     use HavenCore\Utils\ScriptHelpers;
     use HavenCore\Utils\Tracking_Carriers;
     use HavenCore\Classes\HC_Settings;
+    use HavenCore\Settings\Suppliers as SupplierSettings;
 
     ScriptHelpers::loadApiFetch(); // ✅ Injects wp-api-fetch and nonce safely
 
@@ -135,6 +136,7 @@
                 'siteUrl'          => home_url('/'),
                 'settings' => [
                     'suppliers' => [
+                        'allow_supplier_price_editing' => SupplierSettings::supplierPriceEditingEnabled(),
                         'customer_info_print' => $customer_info_print_settings,
                     ],
                 ],
@@ -3009,7 +3011,7 @@
             };
 
             const Products = {
-                inject: ['i18n', 'mobile'],
+                inject: ['i18n', 'mobile', 'settings'],
                 data() {
                     return {
                         loading: false,
@@ -3090,17 +3092,20 @@
                         this.saving = { ...this.saving, [item.id]: true };
                         try {
                             await waitForWP();
+                            const data = {
+                                product_id: item.id,
+                                manage_stock: !!item.manage_stock,
+                                stock_quantity: item.manage_stock ? Number(item.stock_quantity || 0) : null,
+                                stock_status: item.stock_status,
+                                sku: (typeof item.sku === 'string') ? item.sku.trim() : (item.sku == null ? '' : String(item.sku))
+                            };
+                            if (this.allowSupplierPriceEditing) {
+                                data.supplier_price = (item.supplier_price ?? '') !== '' ? String(item.supplier_price) : null;
+                            }
                             const req = {
                                 path: '/hc/v1/suppliers/portal/products/update-stock',
                                 method: 'POST',
-                                data: {
-                                    product_id: item.id,
-                                    manage_stock: !!item.manage_stock,
-                                    stock_quantity: item.manage_stock ? Number(item.stock_quantity || 0) : null,
-                                    stock_status: item.stock_status,
-                                    supplier_price: (item.supplier_price ?? '') !== '' ? String(item.supplier_price) : null,
-                                    sku: (typeof item.sku === 'string') ? item.sku.trim() : (item.sku == null ? '' : String(item.sku))
-                                }
+                                data
                             };
                             if (wp.apiFetch) {
                                 await wp.apiFetch(req);
@@ -3161,17 +3166,20 @@
                             if (this.editDialog.isVariation) {
                                 // Start button loading for this variation id
                                 this.saving = { ...this.saving, [item.id]: true };
+                                const data = {
+                                    variation_id: item.id,
+                                    manage_stock: !!item.manage_stock,
+                                    stock_quantity: item.manage_stock ? Number(item.stock_quantity || 0) : null,
+                                    stock_status: item.stock_status,
+                                    sku: (typeof item.sku === 'string') ? item.sku.trim() : (item.sku == null ? '' : String(item.sku))
+                                };
+                                if (this.allowSupplierPriceEditing) {
+                                    data.supplier_price = (item.supplier_price ?? '') !== '' ? String(item.supplier_price) : null;
+                                }
                                 const req = {
                                     path: '/hc/v1/suppliers/portal/variations/update-stock',
                                     method: 'POST',
-                                    data: {
-                                        variation_id: item.id,
-                                        manage_stock: !!item.manage_stock,
-                                        stock_quantity: item.manage_stock ? Number(item.stock_quantity || 0) : null,
-                                        stock_status: item.stock_status,
-                                        supplier_price: (item.supplier_price ?? '') !== '' ? String(item.supplier_price) : null,
-                                        sku: (typeof item.sku === 'string') ? item.sku.trim() : (item.sku == null ? '' : String(item.sku))
-                                    }
+                                    data
                                 };
                                 if (wp.apiFetch) { await wp.apiFetch(req); } else { await wp.apiRequest(req); }
                                 // Close the edit modal first, then refresh the parent variations list
@@ -3274,6 +3282,9 @@
                     
                 },
                 computed: {
+                    allowSupplierPriceEditing() {
+                        return !!this.settings?.suppliers?.allow_supplier_price_editing;
+                    },
                     first() {
                         const currentPage = Number(this.page) || 1;
                         const size = Number(this.perPage) || 10;
@@ -3480,13 +3491,11 @@
                                         <InputText v-model.number="editDialog.item.stock_quantity" @input="ensureValidStatus(editDialog.item)" :disabled="!editDialog.item.manage_stock" class="w-40" />
                                         <div v-if="!editDialog.item.manage_stock" class="text-xs mt-1">{{ (i18n.n_a || 'N/A') + ' (' + (i18n.unmanaged || 'Unmanaged') + ')' }}</div>
                                     </div>
-                                    <div class="col-span-4 text-sm">{{ i18n.supplier_price || 'Supplier Price' }}</div>
-                                    <div class="col-span-8">
+                                    <div v-if="allowSupplierPriceEditing" class="col-span-4 text-sm">{{ i18n.supplier_price || 'Supplier Price' }}</div>
+                                    <div v-if="allowSupplierPriceEditing" class="col-span-8">
                                         <InputText
                                             v-model="editDialog.item.supplier_price"
-                                            class="w-40 pointer-events-none select-none"
-                                            readonly
-                                            tabindex="-1"
+                                            class="w-40"
                                         />
                                     </div>
                                     <div class="col-span-4 text-sm">{{ i18n.status || 'Status' }}</div>
