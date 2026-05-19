@@ -6,6 +6,7 @@ use HavenCore\Services\EmailVerificationService;
 use HavenCore\Services\HC_Supplier_Service;
 use HavenCore\Settings\WooCommerce as WCSettings;
 use HavenCore\Settings\Notifications;
+use HavenCore\Utils\ScriptHelpers;
 use WC_Order;
 
 
@@ -301,8 +302,14 @@ class Orders
             self::log("❌ Supplier $supplier_id does not have a valid email address.", 0, $order_id);
             return;
         }
-    
-        $fulfillment_link = esc_url(home_url('/supplier-portal')) . '#/orders?order_id=' . urlencode($order_id);
+
+        $supplier_user = get_user_by('email', $supplier_email);
+        $fulfillment_link = esc_url(
+            ScriptHelpers::supplierPortalUrl(
+                '/orders?order_id=' . urlencode((string) $order_id),
+                $supplier_user instanceof \WP_User ? $supplier_user : null
+            )
+        );
 
     
         $subject = $context === 'reassignment'

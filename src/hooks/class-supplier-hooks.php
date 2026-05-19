@@ -4,6 +4,7 @@ namespace HavenCore\Hooks;
 
 use HavenCore\Services\HC_Supplier_Service;
 use HavenCore\Settings\Notifications;
+use HavenCore\Utils\ScriptHelpers;
 
 /**
  * Class SupplierHooks
@@ -49,15 +50,15 @@ class SupplierHooks
     public static function custom_supplier_nav_bar() {
         // Check if the user has the 'supplier' role
         if (wc_current_user_has_role('supplier')) {
-            // List of paths to check against
-            $exclude_paths = ['/supplier-portal', '/checkout', '/cart', '/order-received']; 
+            $request_path = wp_parse_url(home_url(wp_unslash($_SERVER['REQUEST_URI'] ?? '/')), PHP_URL_PATH) ?: '/';
+            $show_nav_bar = !preg_match('#/(?:[^/]+/)?supplier-portal(?:/|$)#', $request_path);
 
-            // Check if the current page URL does NOT start with any of the paths in the list
-            $show_nav_bar = true;
-            foreach ($exclude_paths as $path) {
-                if (strpos($_SERVER['REQUEST_URI'], $path) === 0) {
-                    $show_nav_bar = false;
-                    break;
+            if ($show_nav_bar) {
+                foreach (['/checkout', '/cart', '/order-received'] as $path) {
+                    if (strpos($request_path, $path) === 0) {
+                        $show_nav_bar = false;
+                        break;
+                    }
                 }
             }
 
@@ -69,7 +70,7 @@ class SupplierHooks
                 <div class="supplier-admin-bar">
                     <ul>
                         <li>
-                            <a href="/supplier-portal">
+                            <a href="<?= esc_url(ScriptHelpers::supplierPortalUrl('', wp_get_current_user())); ?>">
                                 <i class="pi pi-chart-bar"></i> <!-- PrimeIcons Chart Bar Icon -->
                                 <?php echo esc_html(__('Dashboard', HAVEN_CORE_TEXT_DOMAIN)); ?>
                             </a>
@@ -341,7 +342,7 @@ class SupplierHooks
     public static function redirectSupplierLogin($redirect_to, $request, $user)
     {
         if (isset($user->roles) && in_array('supplier', $user->roles, true)) {
-            return home_url('/supplier-portal');
+            return ScriptHelpers::supplierPortalUrl('', $user);
         }
         return $redirect_to;
     }
@@ -359,7 +360,7 @@ class SupplierHooks
             is_admin() &&                      // <- important!
             !wp_doing_cron()
         ) {
-            wp_redirect(home_url('/supplier-portal'));
+            wp_redirect(ScriptHelpers::supplierPortalUrl('', wp_get_current_user()));
             exit;
         }
     }
@@ -378,7 +379,7 @@ class SupplierHooks
             // Check if the current user has the 'supplier' role
             if (in_array('supplier', $user->roles)) {
                 // Redirect to the supplier portal or another page
-                wp_redirect(home_url('/supplier-portal'));
+                wp_redirect(ScriptHelpers::supplierPortalUrl('', $user));
                 exit;
             }
         }

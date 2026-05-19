@@ -20,6 +20,7 @@ namespace HavenCore\Utils;
 class ScriptHelpers
 {
     private static bool $fetchClientLoaded = false;
+    private static bool $translatePressBootstrapped = false;
 
     private static function assetUrl(string $relativePath, bool $forceTimestamp = false): string
     {
@@ -72,6 +73,147 @@ class ScriptHelpers
                 }
             </script>
         HTML;
+    }
+
+    /**
+     * Bootstrap TranslatePress gettext processing for standalone templates that
+     * do not call the normal WordPress frontend hooks like wp_head().
+     */
+    public static function bootstrapTranslatePress(): bool
+    {
+        if (self::$translatePressBootstrapped) {
+            return true;
+        }
+
+        if (!class_exists('\TRP_Translate_Press')) {
+            return false;
+        }
+
+        $trp = \TRP_Translate_Press::get_trp_instance();
+        if (!is_object($trp) || !method_exists($trp, 'get_component')) {
+            return false;
+        }
+
+        $gettext_manager = $trp->get_component('gettext_manager');
+        if (!is_object($gettext_manager) || !method_exists($gettext_manager, 'apply_gettext_filter')) {
+            return false;
+        }
+
+        $gettext_manager->apply_gettext_filter();
+        self::$translatePressBootstrapped = true;
+
+        return true;
+    }
+
+    /**
+     * Resolve the active TranslatePress language for the current request or user.
+     */
+    public static function resolveTranslatePressLanguage(?\WP_User $user = null): ?string
+    {
+        if (!class_exists('\TRP_Translate_Press')) {
+            return null;
+        }
+
+        $trp = \TRP_Translate_Press::get_trp_instance();
+        if (!is_object($trp) || !method_exists($trp, 'get_component')) {
+            return null;
+        }
+
+        $settings_component = $trp->get_component('settings');
+        $url_converter = $trp->get_component('url_converter');
+        $settings = is_object($settings_component) && method_exists($settings_component, 'get_settings')
+            ? $settings_component->get_settings()
+            : [];
+        $languages = $settings['translation-languages'] ?? [];
+
+        if (!is_array($languages) || empty($languages)) {
+            return null;
+        }
+
+        $requested_language = is_object($url_converter) && method_exists($url_converter, 'get_lang_from_url_string')
+            ? $url_converter->get_lang_from_url_string()
+            : null;
+
+        if (!empty($requested_language) && in_array($requested_language, $languages, true)) {
+            return $requested_language;
+        }
+
+        global $TRP_LANGUAGE;
+
+        if (!empty($TRP_LANGUAGE) && in_array($TRP_LANGUAGE, $languages, true)) {
+            return $TRP_LANGUAGE;
+        }
+
+        if ($user instanceof \WP_User && $user->exists()) {
+            $preferred_language = get_user_meta($user->ID, 'trp_language', true);
+
+            if (empty($preferred_language)) {
+                $fallback_locale = get_user_locale($user);
+                if (in_array($fallback_locale, $languages, true)) {
+                    $preferred_language = $fallback_locale;
+                }
+            }
+
+            if (!empty($preferred_language) && in_array($preferred_language, $languages, true)) {
+                return $preferred_language;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Convert a local site URL to the requested TranslatePress language.
+     */
+    public static function localizeUrl(string $url, ?string $language = null): string
+    {
+        if (!class_exists('\TRP_Translate_Press')) {
+            return $url;
+        }
+
+        $language = $language ?: self::resolveTranslatePressLanguage(is_user_logged_in() ? wp_get_current_user() : null);
+        if (empty($language)) {
+            return $url;
+        }
+
+        $trp = \TRP_Translate_Press::get_trp_instance();
+        if (!is_object($trp) || !method_exists($trp, 'get_component')) {
+            return $url;
+        }
+
+        $url_converter = $trp->get_component('url_converter');
+        if (!is_object($url_converter) || !method_exists($url_converter, 'get_url_for_language')) {
+            return $url;
+        }
+
+        return $url_converter->get_url_for_language($language, $url, '');
+    }
+
+    /**
+     * Build the supplier portal URL in the active or preferred language.
+     */
+    public static function supplierPortalUrl(string $hash = '', ?\WP_User $user = null): string
+    {
+        $portal_url = self::localizeUrl(
+            home_url('/supplier-portal'),
+            self::resolveTranslatePressLanguage($user)
+        );
+
+        if ($hash === '') {
+            return $portal_url;
+        }
+
+        return $portal_url . '#' . ltrim($hash, '#');
+    }
+
+    /**
+     * Build the current request URL as an absolute site URL.
+     */
+    public static function currentUrl(): string
+    {
+        $request_uri = isset($_SERVER['REQUEST_URI']) ? wp_unslash($_SERVER['REQUEST_URI']) : '/';
+
+        return home_url($request_uri);
     }
 
     public static function loadVue(array $options = []): void

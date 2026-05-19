@@ -10,16 +10,43 @@
     use HavenCore\Classes\HC_Settings;
     use HavenCore\Settings\Suppliers as SupplierSettings;
 
-    ScriptHelpers::loadApiFetch(); // ✅ Injects wp-api-fetch and nonce safely
+    $current_user = wp_get_current_user();
+    $has_translatepress = false;
+    $preferred_tp_language = ScriptHelpers::resolveTranslatePressLanguage($current_user);
+    $requested_tp_language = null;
 
+    if (class_exists('\TRP_Translate_Press')) {
+        $trp = \TRP_Translate_Press::get_trp_instance();
+        $trp_url_converter = is_object($trp) && method_exists($trp, 'get_component')
+            ? $trp->get_component('url_converter')
+            : null;
+        $requested_tp_language = is_object($trp_url_converter) && method_exists($trp_url_converter, 'get_lang_from_url_string')
+            ? $trp_url_converter->get_lang_from_url_string()
+            : null;
+
+        if (empty($requested_tp_language) && !empty($preferred_tp_language) && function_exists('trp_switch_language')) {
+            trp_switch_language($preferred_tp_language);
+
+            $localized_portal_url = ScriptHelpers::supplierPortalUrl('', $current_user);
+            $current_url = ScriptHelpers::currentUrl();
+
+            if (untrailingslashit($localized_portal_url) !== untrailingslashit($current_url)) {
+                wp_safe_redirect($localized_portal_url);
+                exit;
+            }
+        }
+
+        $has_translatepress = ScriptHelpers::bootstrapTranslatePress();
+    }
+
+    ScriptHelpers::loadApiFetch(); // ✅ Injects wp-api-fetch and nonce safely
     ScriptHelpers::loadVue([
         'withDraggable'    => true,
         'withMiniQr'       => true,
     ]);
 
     // Get the current user and their locale
-    $current_user = wp_get_current_user();
-    $user_locale = get_user_locale($current_user); // Get the WordPress locale for the user
+    $user_locale = $has_translatepress ? get_locale() : get_user_locale($current_user); // Respect frontend language when TranslatePress is active
     $user_attributes = get_user_meta($current_user->ID, 'attributes', true);
 
     // If the user has a locale, switch to it
@@ -133,7 +160,8 @@
         <script type="application/json" id="app-initial-data">
             <?= json_encode([
                 'trackingCarriers' => $tracking_carriers,
-                'siteUrl'          => home_url('/'),
+                'siteUrl'          => ScriptHelpers::localizeUrl(home_url('/'), $preferred_tp_language),
+                'portalUrl'        => ScriptHelpers::supplierPortalUrl('', $current_user),
                 'settings' => [
                     'suppliers' => [
                         'allow_supplier_price_editing' => SupplierSettings::supplierPriceEditingEnabled(),
@@ -141,7 +169,7 @@
                     ],
                 ],
                 'primeicons_css'   => HAVEN_CORE_URL . 'assets/css/primeicons/primeicons.css',
-                'loginUrl'         => wp_login_url($_SERVER['REQUEST_URI']),
+                'loginUrl'         => wp_login_url(ScriptHelpers::supplierPortalUrl('', $current_user)),
                 'i18n' => [
 
                     // ─── General UI ───────────────────────────────
@@ -309,7 +337,7 @@
             console.log('MiniQr:', window.MiniQr)
             
             const initialData = JSON.parse(document.getElementById('app-initial-data')?.textContent || '{}');
-            const portalLoginUrl = initialData.loginUrl || <?= json_encode(wp_login_url($_SERVER['REQUEST_URI'])); ?>;
+            const portalLoginUrl = initialData.loginUrl || <?= json_encode(wp_login_url(ScriptHelpers::supplierPortalUrl('', $current_user))); ?>;
 
             let authRedirectGraceUntil = 0;
             const extendAuthRedirectGrace = (duration = 1000 * 10) => {
@@ -5302,7 +5330,7 @@
                     // =============================
 
                     goToHome() {
-                        window.location.href = '<?= home_url(); ?>';
+                        window.location.href = this.siteUrl || '<?= esc_url(home_url('/')); ?>';
                     },
 
                     // =============================
