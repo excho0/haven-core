@@ -90,34 +90,15 @@ The agent must identify the intended domain and WordPress root explicitly. If mu
 
 ## 4. Deploy HavenCore
 
-### Preferred Git workflow
+The production Hostinger copies are intentionally detached from GitHub. Do not configure a GitHub remote, deploy key, webhook, or `git pull` on the production server.
 
-Use a dedicated deployment branch or tag. Do not deploy `dev` directly to production unless explicitly approved.
+Use a release ZIP and upload each approved version as a new versioned folder, for example:
 
-From the WordPress plugins directory:
-
-```bash
-cd /home/HOSTINGER_USER/domains/example.com/public_html/wp-content/plugins
-
-# First deployment only
-git clone --branch dev git@github.com:excho0/haven-core.git haven-core
-
-cd haven-core
-composer install --no-dev --optimize-autoloader
+```text
+wp-content/plugins/haven-core-v0.1.0/
 ```
 
-For an existing checkout:
-
-```bash
-cd /home/HOSTINGER_USER/domains/example.com/public_html/wp-content/plugins/haven-core
-git status --short
-git fetch origin
-git checkout dev
-git pull --ff-only origin dev
-composer install --no-dev --optimize-autoloader
-```
-
-Before activation, confirm:
+The uploaded folder must contain `haven-core.php`, `vendor/`, `src/`, `include/`, and `db/`. Run a read-only preflight in the new folder:
 
 ```bash
 test -f haven-core.php
@@ -125,29 +106,20 @@ test -f vendor/autoload.php
 php -l haven-core.php
 ```
 
-Activate only after a backup and a clean preflight:
+After backup, approval, and preflight, switch the new folder into the live plugin name `haven-core`, keeping the previous folder as a recoverable backup. The final folder used by WordPress must still be named `haven-core` unless the plugin activation path is deliberately changed.
+
+Example switch pattern:
 
 ```bash
-wp plugin activate haven-core
-wp rewrite flush
+PLUGIN_ROOT=/home/HOSTINGER_USER/domains/example.com/public_html/wp-content/plugins
+VERSIONED=haven-core-v0.1.0
+mv "$PLUGIN_ROOT/haven-core" "$PLUGIN_ROOT/haven-core-backup-$(date +%Y%m%d-%H%M%S)"
+mv "$PLUGIN_ROOT/$VERSIONED" "$PLUGIN_ROOT/haven-core"
 ```
 
-If the plugin is already active, do not deactivate/reactivate automatically. Review the change, back up the site, and use the least disruptive update path.
+Do not overwrite the live folder in place before the new version passes preflight.
 
-### ZIP workflow
-
-A distributable ZIP must contain:
-
-```text
-haven-core/
-├── haven-core.php
-├── vendor/
-├── src/
-├── include/
-└── db/
-```
-
-The ZIP must include `vendor/autoload.php`. A ZIP without `vendor/` will fail at runtime unless Composer is run on the server.
+For local development or staging, Git remains the source-control system. That does not authorize a production server to access the private GitHub repository.
 
 ## 5. HavenCore activation side effects
 
