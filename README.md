@@ -317,7 +317,7 @@ If a custom namespace filter is enabled, use the customized namespace instead.
 
 ## Hostinger and AI Agent Operations
 
-For SSH setup, safe deployment, key management, Hostinger paths, MCP configuration, backups, approvals, and maintenance procedures, see [`docs/HOSTINGER_AI_RUNBOOK.md`](docs/HOSTINGER_AI_RUNBOOK.md).
+For SSH setup, safe deployment, key management, Hostinger paths, MCP configuration, backups, approvals, and maintenance procedures, see [`docs/HOSTINGER_AI_RUNBOOK.md`](docs/HOSTINGER_AI_RUNBOOK.md).\n\nFor Windows Codex setup with Hostinger MCP/API, see [`docs/SETUP_HOSTINGER_MCP_WINDOWS.md`](docs/SETUP_HOSTINGER_MCP_WINDOWS.md) and the credential-free [`docs/HOSTINGER_MCP_CODEX_WINDOWS.toml`](docs/HOSTINGER_MCP_CODEX_WINDOWS.toml) template.
 
 ## Release Checklist
 
