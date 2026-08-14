@@ -1,81 +1,166 @@
 # HavenCore
 
-Core supplier and admin utilities for WooCommerce, with REST API and MCP tooling for automation agents.
+HavenCore is a WordPress/WooCommerce plugin that provides supplier operations, fulfillment workflows, supplier/admin messaging, settings management, REST APIs, and a versioned MCP server for AI agents.
 
-## What This Plugin Provides
+> **Status:** Early development  
+> **Current version:** 0.0.1  
+> **Default development branch:** `dev`
 
-- Supplier management (create/update/list/delete with safety checks)
-- Supplier order fulfillment workflows
-- Supplier/admin messaging
-- HavenCore settings management
-- MCP server integration for AI/agent tooling
+## What HavenCore Provides
 
-## MCP Overview
+- Supplier management:
+  - List suppliers
+  - Get supplier details
+  - Create, update, and delete suppliers
+  - Safety checks before deletion
+- Supplier order fulfillment:
+  - View supplier assignments
+  - Reassign suppliers
+  - Reset fulfillment state
+  - Confirm fulfillment and tracking
+- Supplier/admin messaging:
+  - Conversations
+  - Messages
+  - Read/unread state
+  - Conversation deletion for administrators
+- HavenCore settings:
+  - Read and update settings
+  - Retrieve the settings schema and field metadata
+- WordPress lifecycle management:
+  - Creates the Supplier role on activation
+  - Creates required plugin pages
+  - Creates/updates HavenCore database tables
+  - Flushes rewrite rules
+- REST API and MCP integration for automation agents
 
-HavenCore exposes a versioned MCP server so agents can safely execute operational tools.
+## Requirements
 
-Default server route:
+- WordPress
+- WooCommerce
+- PHP with the extensions required by WordPress, WooCommerce, and the Composer dependencies
+- A WordPress user with the appropriate capabilities for the requested operation
 
-`/wp-json/havencore/mcp/v1`
+The plugin ships with its Composer dependencies in `vendor/`. If you are installing from source and `vendor/autoload.php` is missing, run:
 
-You can customize the namespace via the `havencore_mcp_rest_namespace` filter.
-
-### MCP Architecture
-
-Abilities are grouped by domain:
-
-- `Suppliers`
-- `Messaging`
-- `Orders`
-- `Settings`
-
-Current MCP tree (source of truth):
-
-```text
-include/mcp/
-├── Abilities/
-│   └── V1/
-│       ├── Messaging/class-hc-mcp-messaging-abilities-v1-registrar.php
-│       ├── Orders/class-hc-mcp-orders-abilities-v1-registrar.php
-│       ├── Settings/class-hc-mcp-settings-abilities-v1-registrar.php
-│       ├── Suppliers/class-hc-mcp-supplier-abilities-v1-registrar.php
-│       └── class-hc-mcp-abilities-v1-registry.php
-├── Bootstrap/class-hc-mcp-bootstrap.php
-├── Contracts/class-hc-mcp-abilities-v1-registrar-contract.php
-├── Servers/V1/class-hc-mcp-havencore-server-v1.php
-├── Utils/class-hc-mcp-supplier-payload.php
-└── class-hc-mcp-adapter.php
+```bash
+composer install --no-dev --optimize-autoloader
 ```
 
-Important MCP files:
+For development, install all dependencies:
 
-- `include/mcp/Bootstrap/class-hc-mcp-bootstrap.php`
-- `include/mcp/Abilities/V1/class-hc-mcp-abilities-v1-registry.php`
-- `include/mcp/Servers/V1/class-hc-mcp-havencore-server-v1.php`
+```bash
+composer install
+```
+
+## Installation
+
+### From a ZIP file
+
+The ZIP must contain one plugin directory with `haven-core.php` at its root:
+
+```text
+haven-core.zip
+└── haven-core/
+    ├── haven-core.php
+    ├── vendor/
+    ├── src/
+    ├── include/
+    ├── db/
+    └── composer.json
+```
+
+In WordPress:
+
+1. Go to **Plugins → Add New → Upload Plugin**.
+2. Upload `haven-core.zip`.
+3. Install and activate the plugin.
+4. Confirm that WooCommerce is active.
+5. Open **HavenCore → Settings** and review the configuration.
+
+### From Git
+
+```bash
+cd wp-content/plugins
+git clone https://github.com/excho0/haven-core.git haven-core
+cd haven-core
+composer install --no-dev --optimize-autoloader
+```
+
+Then activate HavenCore from the WordPress admin.
+
+## Activation and Deactivation
+
+When HavenCore is activated, it:
+
+- Creates the `supplier` role if it does not exist.
+- Creates the Goodbye, Supplier Portal, Place Order, and Account Security pages when needed.
+- Installs HavenCore database tables.
+- Publishes the plugin-managed pages.
+- Flushes WordPress rewrite rules.
+
+When it is deactivated, the plugin-managed pages are moved to draft and rewrite rules are flushed.
+
+Uninstalling the plugin removes HavenCore settings, the Supplier role, plugin-managed pages, supplier order metadata, and HavenCore database data. Treat uninstall as a destructive operation and back up the site first.
+
+## Project Structure
+
+```text
+haven-core/
+├── haven-core.php          # WordPress plugin entry point
+├── composer.json           # PHP dependencies and autoloading
+├── composer.lock           # Locked dependency versions
+├── src/                    # Bootstrap, services, views, assets, and integrations
+├── include/                # Namespaced PHP classes and MCP implementation
+├── db/                     # Database migrations and seeds
+├── vendor/                 # Composer dependencies included in distributable builds
+├── phinx.php               # Development migration configuration
+└── README.md
+```
+
+Business logic should live in services and domain classes. REST and MCP handlers should validate input, enforce capabilities, call the appropriate service, and return structured results.
+
+## REST API
+
+HavenCore registers REST API namespaces including:
+
+- `hc/v1`
+- `hc/v1/suppliers`
+- `hc/v1/communications`
+- `hc/v1/customers`
+
+Refer to the implementation in `src/` for the current endpoint contracts and permission callbacks.
+
+## MCP Server
+
+HavenCore exposes a versioned MCP HTTP server.
+
+Default endpoint:
+
+```text
+https://YOUR-SITE.example/wp-json/havencore/mcp/v1
+```
+
+The namespace can be customized with the `havencore_mcp_rest_namespace` filter.
 
 Internal server metadata:
 
 - Server ID: `havencore-mcp-v1`
-- Namespace: `havencore/mcp` (default)
-- Route: `v1`
+- Namespace: `havencore/mcp`
+- Route version: `v1`
 
-## Authentication
+### Authentication
 
-For MCP HTTP usage, authenticate with a WordPress user that has the required capabilities.
+For development and server-to-server use, authenticate with a WordPress Application Password:
 
-Recommended for development:
+```http
+Authorization: Basic BASE64(username:application-password)
+```
 
-- WordPress Application Password (Basic auth header)
+Use HTTPS in production. Never commit Application Passwords, API keys, or other credentials to the repository.
 
-Example header:
+### MCP Ability Groups
 
-`Authorization: Basic base64(username:application-password)`
-
-## Available MCP Tool Groups
-
-All ability IDs use the `havencore/<tool-name>` format.
-
-### Suppliers
+#### Suppliers
 
 - `havencore/suppliers-list`
 - `havencore/supplier-get`
@@ -83,80 +168,174 @@ All ability IDs use the `havencore/<tool-name>` format.
 - `havencore/supplier-update`
 - `havencore/supplier-delete`
 
-Delete safeguards:
+Supplier deletion is protected: a non-force delete is blocked when the supplier has non-fulfilled assigned orders. The failure payload includes the reason and pending fulfillment order IDs.
 
-- Non-force delete is blocked when supplier has non-fulfilled assigned orders.
-- Failure payload includes:
-  - `reason: supplier_orders_not_fulfilled`
-  - `pending_fulfillment_order_ids: [...]`
-
-### Messaging
+#### Messaging
 
 - `havencore/conversations-list`
 - `havencore/conversation-create`
 - `havencore/conversation-messages-list`
 - `havencore/conversation-message-create`
 - `havencore/conversation-mark-read`
-- `havencore/unread-summary-get`
-- `havencore/conversation-delete` (admin)
+- `havencore/conversation-delete` (administrator)
 
-### Orders
+#### Orders
 
-- `havencore/order-suppliers-get` (admin)
-- `havencore/order-supplier-reassign` (admin)
-- `havencore/order-fulfillment-reset` (admin)
+- `havencore/order-suppliers-get` (administrator)
+- `havencore/order-supplier-reassign` (administrator)
+- `havencore/order-fulfillment-reset` (administrator)
 - `havencore/order-fulfillment-confirm` (supplier)
 - `havencore/supplier-assigned-orders-list` (supplier)
 
-### Settings
+#### Settings
 
 - `havencore/settings-get`
 - `havencore/settings-update`
 - `havencore/settings-schema-get`
 
-`settings-schema-get` returns field-level metadata to help agents understand what each setting does before updating.
+Agents should call `settings-schema-get` before changing unfamiliar settings. It provides field-level metadata, defaults, and guidance for supported settings.
 
-## REST API Namespaces
+## Agent Instructions
 
-HavenCore registers REST endpoints under:
+This section is intended for AI agents and MCP clients integrating with HavenCore.
 
-- `hc/v1`
-- `hc/v1/suppliers`
-- `hc/v1/communications`
-- `hc/v1/customers`
+### Operating principles
 
-## Quick Start
+1. **Authenticate first.** Confirm that the current WordPress user has the required role and capabilities.
+2. **Use least privilege.** Use supplier-level operations for supplier workflows and administrator-level operations only when necessary.
+3. **Read before writing.** Retrieve the current supplier, order, conversation, or setting before changing it.
+4. **Validate identifiers.** Confirm supplier IDs, order IDs, conversation IDs, and tracking data before executing a mutation.
+5. **Use the settings schema.** Do not guess setting keys or value types.
+6. **Prefer structured outputs.** Preserve IDs, statuses, error codes, and pending-action lists in the agent's response.
+7. **Explain side effects.** Tell the user when an action changes orders, sends messages, changes settings, or modifies site data.
+8. **Confirm destructive actions.** Ask for explicit confirmation before deleting suppliers, deleting conversations, resetting fulfillment, or performing bulk changes.
+9. **Do not expose secrets.** Never return Application Passwords, tokens, encrypted settings, or private customer data unless the user is authorized to see it.
+10. **Fail safely.** If a precondition fails, stop and report the exact reason instead of forcing the operation.
 
-1. Install and activate HavenCore plugin.
-2. Ensure WooCommerce is active.
-3. Configure MCP client to point to:
-   - `https://<your-site>/wp-json/havencore/mcp/v1`
-4. Add auth headers (Application Password recommended).
-5. Reload your MCP client session.
-6. Call a simple tool first (example: `havencore/suppliers-list`).
+### Recommended workflows
 
-## Capability Model (High Level)
+#### Create or update a supplier
 
-- Admin tools require WordPress admin capabilities (`manage_options` and/or `manage_woocommerce`).
-- Supplier tools require authenticated supplier role in relevant flows.
+1. Call `havencore/suppliers-list` or `havencore/supplier-get` to check for duplicates.
+2. Validate required supplier fields.
+3. Call `havencore/supplier-create` or `havencore/supplier-update`.
+4. Report the resulting supplier ID and status.
+5. If the operation fails, preserve the structured validation errors.
 
-## Development Notes
+#### Delete a supplier
 
-- Keep business logic in services where possible, not only in REST/MCP handlers.
-- Prefer domain registrars for MCP abilities (`Suppliers`, `Messaging`, `Orders`, `Settings`).
-- Keep MCP tool outputs structured and machine-readable.
+1. Retrieve the supplier and its assigned orders.
+2. Check whether any assigned orders are not fulfilled.
+3. If pending fulfillment exists, do not force deletion automatically.
+4. Explain the blocking order IDs to the user.
+5. Request explicit confirmation before any force-delete option is used.
+
+#### Fulfill an order
+
+1. Retrieve the supplier/order assignment.
+2. Confirm that the acting user is authorized for the supplier or administrator workflow.
+3. Validate tracking information and fulfillment state.
+4. Call the appropriate fulfillment operation.
+5. Report the new fulfillment status and any customer notification side effects.
+
+#### Change settings
+
+1. Call `havencore/settings-schema-get`.
+2. Call `havencore/settings-get`.
+3. Present the proposed change and its effect.
+4. Call `havencore/settings-update` only after the value has been validated.
+5. Re-read the settings after the update when confirmation is important.
+
+#### Messaging
+
+1. Locate or create the correct conversation.
+2. Verify the recipient and relevant order/supplier context.
+3. Send only the minimum necessary information.
+4. Return the conversation and message IDs.
+5. Never include credentials, payment secrets, or unnecessary customer data.
+
+## Permissions
+
+At a high level:
+
+- Administrator tools require capabilities such as `manage_options` and/or `manage_woocommerce`.
+- Supplier tools require an authenticated user in the relevant supplier workflow.
+- Exact permission checks are defined in the REST and MCP implementation and are authoritative over this document.
+
+## Development
+
+Install dependencies:
+
+```bash
+composer install
+```
+
+Run database migrations:
+
+```composer
+composer migrate
+```
+
+Roll back migrations during development:
+
+```bash
+composer migrate:rollback
+```
+
+Keep database changes in `db/migrations`. Keep MCP abilities grouped by domain and version. Keep outputs machine-readable and backward-compatible where possible.
 
 ## Troubleshooting
 
-- Tools not visible after code changes:
-  - Regenerate autoload if needed: `composer dump-autoload -o`
-  - Reload MCP client/session
-- Auth failures:
-  - Verify user role/capabilities
-  - Verify headers and endpoint URL
-- Route mismatch:
-  - Confirm namespace and route (`/wp-json/havencore/mcp/v1` by default)
+### MCP tools are not visible
+
+- Confirm the MCP endpoint is correct.
+- Confirm the WordPress user is authenticated.
+- Confirm the plugin is active.
+- Reload the MCP client/session after code changes.
+- Confirm the ability is registered in the current MCP registry.
+
+### Composer autoloader error
+
+Verify that `vendor/autoload.php` exists inside the plugin directory. If it does not, run Composer or install a distributable ZIP that includes `vendor/`.
+
+### Authentication or permission error
+
+- Verify the Application Password.
+- Verify the WordPress user role.
+- Verify the required capability for the requested operation.
+- Check whether the operation is administrator-only.
+
+### Route mismatch
+
+The default MCP endpoint is:
+
+```text
+/wp-json/havencore/mcp/v1
+```
+
+If a custom namespace filter is enabled, use the customized namespace instead.
+
+## Release Checklist
+
+Before distributing HavenCore:
+
+- [ ] Test installation on a clean WordPress site.
+- [ ] Confirm WooCommerce is active.
+- [ ] Confirm `vendor/autoload.php` is included.
+- [ ] Test activation, deactivation, and uninstall behavior.
+- [ ] Test database installation and upgrade paths.
+- [ ] Test administrator and supplier permissions.
+- [ ] Test all destructive-operation safeguards.
+- [ ] Test the MCP endpoint with an Application Password.
+- [ ] Confirm no secrets or private credentials are included.
+- [ ] Create a version tag and GitHub Release.
+- [ ] Attach a clean plugin ZIP to the Release.
+- [ ] Update the version in `haven-core.php`.
+
+## License
+
+HavenCore is distributed under the MIT license as declared in `composer.json`.
 
 ## Maintainer
 
-Made by `@excho0`.
+Maintained by [@excho0](https://github.com/excho0).
