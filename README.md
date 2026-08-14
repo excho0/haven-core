@@ -272,7 +272,7 @@ composer install
 
 Run database migrations:
 
-```composer
+```bash
 composer migrate
 ```
 
