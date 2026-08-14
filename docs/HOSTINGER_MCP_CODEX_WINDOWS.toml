@@ -1,0 +1,18 @@
+# Copy the sections you need into %USERPROFILE%\\.codex\\config.toml.
+# The token is intentionally not stored here.
+
+[mcp_servers.hostinger_hosting]
+type = "stdio"
+command = "npx.cmd"
+args = ["--yes", "--package=hostinger-api-mcp@latest", "hostinger-hosting-mcp"]
+
+[mcp_servers.hostinger_wordpress]
+type = "stdio"
+command = "npx.cmd"
+args = ["--yes", "--package=hostinger-api-mcp@latest", "hostinger-wordpress-mcp"]
+
+# Enable only when DNS management is required:
+# [mcp_servers.hostinger_dns]
+# type = "stdio"
+# command = "npx.cmd"
+# args = ["--yes", "--package=hostinger-api-mcp@latest", "hostinger-dns-mcp"]
