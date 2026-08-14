@@ -106,7 +106,7 @@ test -f vendor/autoload.php
 php -l haven-core.php
 ```
 
-After backup, approval, and preflight, switch the new folder into the live plugin name `haven-core`, keeping the previous folder as a recoverable backup. The final folder used by WordPress must still be named `haven-core` unless the plugin activation path is deliberately changed.
+After the initial SSH setup, the agent can perform ordinary plugin code deployments automatically. It uploads the new versioned folder over SSH, runs preflight, keeps the current live folder as a recoverable backup, and switches the new folder into the live plugin name `haven-core`. The final folder used by WordPress must still be named `haven-core` unless the plugin activation path is deliberately changed.
 
 Example switch pattern:
 
