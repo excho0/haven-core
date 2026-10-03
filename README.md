@@ -338,7 +338,7 @@ Before distributing HavenCore:
 
 ## License
 
-HavenCore is distributed under the MIT license as declared in `composer.json`.
+HavenCore's original project code is released under the [MIT License](LICENSE). Third-party libraries and bundled assets retain their own licenses; check their notices before redistributing them.
 
 ## Maintainer
 

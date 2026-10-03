@@ -4,6 +4,8 @@
  * Description: Core supplier and admin utilities for WooCommerce.
  * Version: 0.0.1
  * Author: excho0
+ * License: MIT
+ * License URI: https://opensource.org/license/mit/
  * Text Domain: haven-core
  */
 
